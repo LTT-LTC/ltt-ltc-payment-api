@@ -10,8 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      IMAGE_NAME: dranov220805/ltt-ltc-Payment-api
-      SERVICE_NAME: ltt-ltc-Payment-api
+      IMAGE_NAME: dranov220805/ltt-ltc-payment-api
+      SERVICE_NAME: ltt-ltc-payment-api
 
     steps:
       - name: Checkout code
@@ -50,8 +50,8 @@ jobs:
           ssh -o StrictHostKeyChecking=no dranov@100.109.240.84 << 'EOF'
             cd /home/dranov/Desktop/ltt-ltc
 
-            docker compose pull ltt-ltc-Payment-api
-            docker compose up -d --no-deps ltt-ltc-Payment-api
+            docker compose pull ltt-ltc-payment-api
+            docker compose up -d --no-deps ltt-ltc-payment-api
           EOF
 
 
