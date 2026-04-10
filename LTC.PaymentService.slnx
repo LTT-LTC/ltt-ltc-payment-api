@@ -1,0 +1,40 @@
+<Solution>
+  <Folder Name="/shared/">
+    <Project Path="shared/LTC.Shared.CrossCuttingConcerns/LTC.Shared.CrossCuttingConcerns.csproj" />
+    <Project Path="shared/LTC.Shared.Hosting.AspNetCore/LTC.Shared.Hosting.AspNetCore.csproj" />
+    <Project Path="shared/LTC.Shared.Hosting.Microservices/LTC.Shared.Hosting.Microservices.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/LTC.PaymentService.Application.Contracts/LTC.PaymentService.Application.Contracts.csproj" />
+    <Project Path="src/LTC.PaymentService.Application/LTC.PaymentService.Application.csproj" />
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    <Project Path="src/LTC.PaymentService.DbMigrator/LTC.PaymentService.DbMigrator.csproj" />
+    <Project Path="src/LTC.PaymentService.Domain.Shared/LTC.PaymentService.Domain.Shared.csproj" />
+    <Project Path="src/LTC.PaymentService.Domain/LTC.PaymentService.Domain.csproj" />
+    <Project Path="src/LTC.PaymentService.EntityFrameworkCore/LTC.PaymentService.EntityFrameworkCore.csproj" />
+    <Project Path="src/LTC.PaymentService.HttpApi.Client/LTC.PaymentService.HttpApi.Client.csproj" />
+    
+    <Project Path="src/LTC.PaymentService.HttpApi/LTC.PaymentService.HttpApi.csproj" />
+    
+    
+    
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/LTC.PaymentService.Application.Tests/LTC.PaymentService.Application.Tests.csproj" />
+    <Project Path="test/LTC.PaymentService.Domain.Tests/LTC.PaymentService.Domain.Tests.csproj" />
+    <Project Path="test/LTC.PaymentService.EntityFrameworkCore.Tests/LTC.PaymentService.EntityFrameworkCore.Tests.csproj" />
+    <Project Path="test/LTC.PaymentService.HttpApi.Client.ConsoleTestApp/LTC.PaymentService.HttpApi.Client.ConsoleTestApp.csproj" />
+    
+    <Project Path="test/LTC.PaymentService.TestBase/LTC.PaymentService.TestBase.csproj" />
+    
+  </Folder>
+  <Project Path="LTC.PaymentService.HttpApi.Host/LTC.PaymentService.HttpApi.Host.csproj" />
+</Solution>
