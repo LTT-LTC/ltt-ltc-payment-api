@@ -1,4 +1,4 @@
-﻿using Hangfire;
+using Hangfire;
 using Hangfire.RecurringJobAdmin;
 using Hangfire.Redis.StackExchange;
 using Medallion.Threading;
@@ -12,7 +12,6 @@ using StackExchange.Redis;
 using Volo.Abp;
 using Volo.Abp.AspNetCore.Authentication.JwtBearer;
 using Volo.Abp.BackgroundJobs;
-using Volo.Abp.BackgroundJobs.Hangfire;
 using Volo.Abp.BackgroundWorkers;
 using Volo.Abp.BackgroundWorkers.Hangfire;
 using Volo.Abp.Caching;
@@ -28,9 +27,9 @@ namespace LTC.Shared.Hosting.Microservices
         typeof(AbpCachingStackExchangeRedisModule),
         //typeof(AdministrationServiceEntityFrameworkCoreModule),
         typeof(AbpDistributedLockingModule)
-    //typeof(AbpBackgroundJobsModule),
+    //
     //typeof(AbpBackgroundWorkersModule),
-    //typeof(AbpBackgroundJobsHangfireModule),
+    //
     //typeof(AbpBackgroundWorkersHangfireModule)
     )]
     public class LTCSharedHostingMicroservicesModule : AbpModule

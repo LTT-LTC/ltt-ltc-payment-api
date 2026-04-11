@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-using Volo.Abp.Identity;
+using System.ComponentModel.DataAnnotations;
 using Volo.Abp.ObjectExtending;
 using Volo.Abp.Threading;
 
@@ -71,3 +70,4 @@ public static class PaymentServiceModuleExtensionConfigurator
          */
     }
 }
+

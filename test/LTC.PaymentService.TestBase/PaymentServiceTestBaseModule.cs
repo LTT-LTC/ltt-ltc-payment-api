@@ -1,8 +1,8 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Volo.Abp;
 using Volo.Abp.Authorization;
 using Volo.Abp.Autofac;
-using Volo.Abp.BackgroundJobs;
+
 using Volo.Abp.Data;
 using Volo.Abp.Modularity;
 using Volo.Abp.Threading;
@@ -13,7 +13,7 @@ namespace LTC.PaymentService;
     typeof(AbpAutofacModule),
     typeof(AbpTestBaseModule),
     typeof(AbpAuthorizationModule),
-    typeof(AbpBackgroundJobsAbstractionsModule)
+    
     )]
 public class PaymentServiceTestBaseModule : AbpModule
 {
