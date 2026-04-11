@@ -20,14 +20,6 @@ namespace LTC.PaymentService;
 [DependsOn(
     typeof(PaymentServiceDomainSharedModule),
     typeof(AbpAuditLoggingDomainModule),
-    
-    
-    typeof(AbpIdentityDomainModule),
-    typeof(AbpOpenIddictDomainModule),
-    
-    
-    
-    typeof(AbpTenantManagementDomainModule),
     typeof(AbpEmailingModule)
 )]
 public class PaymentServiceDomainModule : AbpModule

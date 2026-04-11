@@ -15,11 +15,8 @@ namespace LTC.PaymentService.EntityFrameworkCore;
 
 [DependsOn(
     typeof(PaymentServiceDomainModule),
-    typeof(AbpIdentityEntityFrameworkCoreModule),
-    typeof(AbpOpenIddictEntityFrameworkCoreModule),
     typeof(AbpEntityFrameworkCoreSqlServerModule),
-    typeof(AbpAuditLoggingEntityFrameworkCoreModule),
-    typeof(AbpTenantManagementEntityFrameworkCoreModule)
+    typeof(AbpAuditLoggingEntityFrameworkCoreModule)
 )]
 public class PaymentServiceEntityFrameworkCoreModule : AbpModule
 {
