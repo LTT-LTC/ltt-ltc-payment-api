@@ -1,8 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using Volo.Abp.Modularity;
 using Volo.Abp.VirtualFileSystem;
 
 namespace LTC.PaymentService;
-
 [DependsOn(
     typeof(PaymentServiceApplicationContractsModule)
 )]
