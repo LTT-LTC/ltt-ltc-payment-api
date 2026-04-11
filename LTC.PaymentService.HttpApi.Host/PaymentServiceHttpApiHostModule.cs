@@ -181,6 +181,8 @@ public class PaymentServiceHttpApiHostModule : AbpModule
         var app = context.GetApplicationBuilder();
         var env = context.GetEnvironment();
 
+        app.UsePathBase("/ltc/payment-service");
+
         if (env.IsDevelopment())
         {
             app.UseDeveloperExceptionPage();
@@ -210,12 +212,12 @@ public class PaymentServiceHttpApiHostModule : AbpModule
 
         app.UseSwagger(options =>
         {
-            options.RouteTemplate = "ltc/payment-service/swagger/{documentName}/swagger.json";
+            options.RouteTemplate = "swagger/{documentName}/swagger.json";
         });
         app.UseAbpSwaggerUI(c =>
         {
-            c.SwaggerEndpoint("/ltc/payment-service/swagger/v1/swagger.json", "PaymentService API");
-            c.RoutePrefix = "ltc/payment-service/swagger";
+            c.SwaggerEndpoint("v1/swagger.json", "PaymentService API");
+            c.RoutePrefix = "swagger";
 
             var configuration = context.ServiceProvider.GetRequiredService<IConfiguration>();
             c.OAuthClientId(configuration["AuthServer:SwaggerClientId"]);
