@@ -207,10 +207,14 @@ public class PaymentServiceHttpApiHostModule : AbpModule
         app.UseDynamicClaims();
         app.UseAuthorization();
 
-        app.UseSwagger();
+        app.UseSwagger(options =>
+        {
+            options.RouteTemplate = "ltc/payment-service/swagger/{documentName}/swagger.json";
+        });
         app.UseAbpSwaggerUI(c =>
         {
-            c.SwaggerEndpoint("/swagger/v1/swagger.json", "PaymentService API");
+            c.SwaggerEndpoint("/ltc/payment-service/swagger/v1/swagger.json", "PaymentService API");
+            c.RoutePrefix = "ltc/payment-service/swagger";
 
             var configuration = context.ServiceProvider.GetRequiredService<IConfiguration>();
             c.OAuthClientId(configuration["AuthServer:SwaggerClientId"]);
