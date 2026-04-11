@@ -9,11 +9,11 @@ using Volo.Abp.Identity;
 using Volo.Abp.Localization;
 using Volo.Abp.Modularity;
 using Volo.Abp.MultiTenancy;
-using Volo.Abp.OpenIddict;
 
 
 
-using Volo.Abp.TenantManagement;
+
+
 
 namespace LTC.PaymentService;
 
