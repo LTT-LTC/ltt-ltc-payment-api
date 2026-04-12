@@ -1,9 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using LTC.PaymentService.Entities;
 using Volo.Abp.AuditLogging.EntityFrameworkCore;
 using Volo.Abp.Data;
-using Volo.Abp.DependencyInjection;
 using Volo.Abp.EntityFrameworkCore;
-using Volo.Abp.Identity;
+using Volo.Abp.EntityFrameworkCore.Modeling;
 
 
 
@@ -17,7 +17,10 @@ namespace LTC.PaymentService.EntityFrameworkCore;
 public class PaymentServiceDbContext :
     AbpDbContext<PaymentServiceDbContext>
 {
-    /* Add DbSet properties for your Aggregate Roots / Entities here. */
+    public DbSet<Payment> Payments { get; set; }
+    public DbSet<PaymentRequest> PaymentRequests { get; set; }
+    public DbSet<PaymentAuditLog> PaymentAuditLogs { get; set; }
+    public DbSet<Refund> Refunds { get; set; }
 
     public PaymentServiceDbContext(DbContextOptions<PaymentServiceDbContext> options)
         : base(options)
@@ -28,18 +31,37 @@ public class PaymentServiceDbContext :
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.HasDefaultSchema(PaymentServiceConsts.DbSchema);
 
         /* Include modules to your migration db context */
 
         builder.ConfigureAuditLogging();
 
-        /* Configure your own tables/entities inside here */
+        builder.Entity<Payment>(b =>
+        {
+            b.ToTable("Payments", PaymentServiceConsts.DbSchema);
+            b.ConfigureByConvention();
+            b.Property(x => x.Amount).HasColumnType("decimal(18,2)");
+        });
 
-        //builder.Entity<YourEntity>(b =>
-        //{
-        //    b.ToTable(PaymentServiceConsts.DbTablePrefix + "YourEntities", PaymentServiceConsts.DbSchema);
-        //    b.ConfigureByConvention(); //auto configure for the base class props
-        //    //...
-        //});
+        builder.Entity<PaymentRequest>(b =>
+        {
+            b.ToTable("PaymentRequests", PaymentServiceConsts.DbSchema);
+            b.ConfigureByConvention();
+            b.Property(x => x.Amount).HasColumnType("decimal(18,2)");
+        });
+
+        builder.Entity<PaymentAuditLog>(b =>
+        {
+            b.ToTable("PaymentAuditLogs", PaymentServiceConsts.DbSchema);
+            b.ConfigureByConvention();
+        });
+
+        builder.Entity<Refund>(b =>
+        {
+            b.ToTable("Refunds", PaymentServiceConsts.DbSchema);
+            b.ConfigureByConvention();
+            b.Property(x => x.Amount).HasColumnType("decimal(18,2)");
+        });
     }
 }

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.Extensions.Configuration;
@@ -24,8 +25,25 @@ public class PaymentServiceDbContextFactory : IDesignTimeDbContextFactory<Paymen
 
     private static IConfigurationRoot BuildConfiguration()
     {
+        var currentDirectory = Directory.GetCurrentDirectory();
+        var candidateBasePaths = new[]
+        {
+            Path.Combine(currentDirectory, "../LTC.PaymentService.DbMigrator/"),
+            Path.Combine(currentDirectory, "../src/LTC.PaymentService.DbMigrator/"),
+            Path.Combine(currentDirectory, "../../src/LTC.PaymentService.DbMigrator/")
+        };
+
+        var dbMigratorPath = candidateBasePaths
+            .Select(Path.GetFullPath)
+            .FirstOrDefault(Directory.Exists);
+
+        if (dbMigratorPath == null)
+        {
+            throw new DirectoryNotFoundException("Unable to locate LTC.PaymentService.DbMigrator directory for EF design-time configuration.");
+        }
+
         var builder = new ConfigurationBuilder()
-            .SetBasePath(Path.Combine(Directory.GetCurrentDirectory(), "../LTC.PaymentService.DbMigrator/"))
+            .SetBasePath(dbMigratorPath)
             .AddJsonFile("appsettings.json", optional: false);
 
         return builder.Build();
