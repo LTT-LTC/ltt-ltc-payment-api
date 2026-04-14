@@ -156,7 +156,10 @@ public class PaymentServiceHttpApiHostModule : AbpModule
             options =>
             {
                 options.SwaggerDoc("v1", new OpenApiInfo { Title = "PaymentService API", Version = "v1" });
-                options.DocInclusionPredicate((docName, description) => description.RelativePath != null && description.RelativePath.StartsWith("ltc/payment-service", StringComparison.OrdinalIgnoreCase));
+                options.DocInclusionPredicate((docName, description) => 
+                    description.RelativePath != null && 
+                    (description.RelativePath.StartsWith("ltc/payment-service", StringComparison.OrdinalIgnoreCase) ||
+                     description.RelativePath.StartsWith("api/administration/admin", StringComparison.OrdinalIgnoreCase)));
                 options.CustomSchemaIds(type => type.FullName);
             });
     }
