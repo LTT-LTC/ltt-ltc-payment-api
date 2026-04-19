@@ -12,6 +12,10 @@ using LTC.PaymentService.EntityFrameworkCore;
 using LTC.PaymentService.MultiTenancy;
 using Volo.Abp.AspNetCore.Mvc.UI.Theme.LeptonXLite;
 using Volo.Abp.AspNetCore.Mvc.UI.Theme.LeptonXLite.Bundling;
+using LTC.Shared.Hosting.Microservices;
+using LTC.Shared.Hosting.Microservices.Authentication;
+using LTC.Shared.Hosting.Microservices.MultiTenancy;
+using LTC.Shared.Hosting.Microservices.OpenApi.Swagger;
 using Microsoft.OpenApi;
 using OpenIddict.Validation.AspNetCore;
 using Volo.Abp;
@@ -25,6 +29,7 @@ using Volo.Abp.AspNetCore.Mvc.UI.Packages;
 using Volo.Abp.AspNetCore.Mvc.UI.Theme.Shared;
 using Volo.Abp.AspNetCore.Serilog;
 using Volo.Abp.Autofac;
+using Volo.Abp.MultiTenancy;
 using Volo.Abp.Localization;
 using Volo.Abp.Modularity;
 using Volo.Abp.Security.Claims;
@@ -41,7 +46,7 @@ namespace LTC.PaymentService;
     typeof(PaymentServiceApplicationModule),
     typeof(PaymentServiceEntityFrameworkCoreModule),
     typeof(AbpAspNetCoreMvcUiLeptonXLiteThemeModule),
-    typeof(AbpAccountWebOpenIddictModule),
+    typeof(LTCSharedHostingMicroservicesModule),
     typeof(AbpAspNetCoreSerilogModule),
     typeof(AbpSwashbuckleModule)
 )]
@@ -49,15 +54,6 @@ public class PaymentServiceHttpApiHostModule : AbpModule
 {
     public override void PreConfigureServices(ServiceConfigurationContext context)
     {
-        PreConfigure<OpenIddictBuilder>(builder =>
-        {
-            builder.AddValidation(options =>
-            {
-                options.AddAudiences("PaymentService");
-                options.UseLocalServer();
-                options.UseAspNetCore();
-            });
-        });
     }
 
     public override void ConfigureServices(ServiceConfigurationContext context)
@@ -66,28 +62,41 @@ public class PaymentServiceHttpApiHostModule : AbpModule
         var hostingEnvironment = context.Services.GetHostingEnvironment();
 
         ConfigureAuthentication(context);
+        context.ConfigureAuthenticationJwtBearer();
         ConfigureBundles();
         ConfigureUrls(configuration);
         ConfigureConventionalControllers();
         ConfigureVirtualFileSystem(context);
         ConfigureCors(context, configuration);
         ConfigureSwaggerServices(context, configuration);
+        Configure<AbpMultiTenancyOptions>(options =>
+        {
+            options.IsEnabled = MultiTenancyConsts.IsEnabled;
+        });
+
+        Configure<AbpAspNetCoreMultiTenancyOptions>(options =>
+        {
+            options.TenantKey = "X-Tenant";
+        });
+
         Configure<AbpMvcLibsOptions>(options =>
         {
             options.CheckLibs = false;
+        });
+
+        context.Services.AddControllers(options =>
+        {
+            options.Filters.Add(typeof(LTC.Shared.Hosting.Microservices.ApplicationExceptionFilterAttribute));
+            options.Filters.Add(typeof(TenantValidationFilter));
         });
     }
 
     private void ConfigureAuthentication(ServiceConfigurationContext context)
     {
-        context.Services.ForwardIdentityAuthenticationForBearer(OpenIddictValidationAspNetCoreDefaults.AuthenticationScheme);
-        context.Services.Configure<AbpClaimsPrincipalFactoryOptions>(options =>
-        {
-            options.IsDynamicClaimsEnabled = true;
-        });
     }
 
-    private void ConfigureBundles()
+    private void 
+        ConfigureBundles()
     {
         Configure<AbpBundlingOptions>(options =>
         {
@@ -147,21 +156,7 @@ public class PaymentServiceHttpApiHostModule : AbpModule
 
     private static void ConfigureSwaggerServices(ServiceConfigurationContext context, IConfiguration configuration)
     {
-        context.Services.AddAbpSwaggerGenWithOAuth(
-            configuration["AuthServer:Authority"]!,
-            new Dictionary<string, string>
-            {
-                    {"PaymentService", "PaymentService API"}
-            },
-            options =>
-            {
-                options.SwaggerDoc("v1", new OpenApiInfo { Title = "PaymentService API", Version = "v1" });
-                options.DocInclusionPredicate((docName, description) => 
-                    description.RelativePath != null && 
-                    (description.RelativePath.StartsWith("ltc/payment-service", StringComparison.OrdinalIgnoreCase) ||
-                     description.RelativePath.StartsWith("api/administration/admin", StringComparison.OrdinalIgnoreCase)));
-                options.CustomSchemaIds(type => type.FullName);
-            });
+        context.ConfigureSwaggerServices("LTC Payment Service API", "v1");
     }
 
     private void ConfigureCors(ServiceConfigurationContext context, IConfiguration configuration)
@@ -205,10 +200,12 @@ public class PaymentServiceHttpApiHostModule : AbpModule
 
         app.UseCorrelationId();
         app.MapAbpStaticAssets();
+
+        app.UseConfiguredSwagger("LTC Payment Service", "ltc/payment-service/swagger");
+
         app.UseRouting();
         app.UseCors();
         app.UseAuthentication();
-        app.UseAbpOpenIddictValidation();
 
         if (MultiTenancyConsts.IsEnabled)
         {
@@ -218,25 +215,17 @@ public class PaymentServiceHttpApiHostModule : AbpModule
         app.UseDynamicClaims();
         app.UseAuthorization();
 
-        app.UseSwagger(options =>
-        {
-            options.RouteTemplate = "swagger/{documentName}/swagger.json";
-        });
-        app.UseAbpSwaggerUI(c =>
-        {
-            c.SwaggerEndpoint("v1/swagger.json", "PaymentService API");
-            c.RoutePrefix = "swagger";
-
-            var configuration = context.ServiceProvider.GetRequiredService<IConfiguration>();
-            c.OAuthClientId(configuration["AuthServer:SwaggerClientId"]);
-            c.OAuthScopes("PaymentService");
-        });
-
         app.UseAuditing();
         app.UseAbpSerilogEnrichers();
         app.UseConfiguredEndpoints();
     }
 }
+
+
+
+
+
+
 
 
 

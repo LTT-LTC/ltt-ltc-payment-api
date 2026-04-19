@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,15 +20,16 @@ public class EntityFrameworkCorePaymentServiceDbSchemaMigrator
 
     public async Task MigrateAsync()
     {
-        /* We intentionally resolve the PaymentServiceDbContext
-         * from IServiceProvider (instead of directly injecting it)
-         * to properly get the connection string of the current tenant in the
-         * current scope.
-         */
+        var dbContext = _serviceProvider.GetRequiredService<PaymentServiceDbContext>();
+        var schema = dbContext.GetCurrentSchema();
 
-        await _serviceProvider
-            .GetRequiredService<PaymentServiceDbContext>()
-            .Database
-            .MigrateAsync();
+        if (!string.IsNullOrEmpty(schema) && schema != "dbo")
+        {
+            // Ensure the schema exists before migrating
+            var sql = $"IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC('CREATE SCHEMA [{schema}]')";
+            await dbContext.Database.ExecuteSqlRawAsync(sql);
+        }
+
+        await dbContext.Database.MigrateAsync();
     }
 }

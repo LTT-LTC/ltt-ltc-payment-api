@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -19,9 +19,11 @@ public class PaymentServiceDbContextFactory : IDesignTimeDbContextFactory<Paymen
 
         var builder = new DbContextOptionsBuilder<PaymentServiceDbContext>()
             .UseSqlServer(configuration.GetConnectionString("Default"));
-
+        
         return new PaymentServiceDbContext(builder.Options);
     }
+
+
 
     private static IConfigurationRoot BuildConfiguration()
     {

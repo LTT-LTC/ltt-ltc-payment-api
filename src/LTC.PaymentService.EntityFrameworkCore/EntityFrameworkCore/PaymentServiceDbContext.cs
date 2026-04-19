@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using LTC.PaymentService.Entities;
+using LTC.PaymentService.MultiTenancy;
 using Volo.Abp.AuditLogging.EntityFrameworkCore;
 using Volo.Abp.Data;
 using Volo.Abp.EntityFrameworkCore;
@@ -22,44 +23,54 @@ public class PaymentServiceDbContext :
     public DbSet<PaymentAuditLog> PaymentAuditLogs { get; set; }
     public DbSet<Refund> Refunds { get; set; }
 
-    public PaymentServiceDbContext(DbContextOptions<PaymentServiceDbContext> options)
+    private readonly ITenantSchemaResolver? _tenantSchemaResolver;
+
+    public PaymentServiceDbContext(
+        DbContextOptions<PaymentServiceDbContext> options,
+        ITenantSchemaResolver? tenantSchemaResolver = null)
         : base(options)
     {
-
+        _tenantSchemaResolver = tenantSchemaResolver;
     }
+
+    public string GetCurrentSchema() => _tenantSchemaResolver?.GetSchemaName() ?? "dbo";
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
-        builder.HasDefaultSchema(PaymentServiceConsts.DbSchema);
+        
+        var schema = GetCurrentSchema();
 
-        /* Include modules to your migration db context */
-
+        // ABP audit logging tables use the default dbo schema — set it before calling ConfigureAuditLogging.
+        builder.HasDefaultSchema("dbo");
         builder.ConfigureAuditLogging();
+
+        // Reset to tenant schema so all service-specific entities use the correct per-tenant schema.
+        builder.HasDefaultSchema(schema);
 
         builder.Entity<Payment>(b =>
         {
-            b.ToTable("Payments", PaymentServiceConsts.DbSchema);
+            b.ToTable("Payments");
             b.ConfigureByConvention();
             b.Property(x => x.Amount).HasColumnType("decimal(18,2)");
         });
 
         builder.Entity<PaymentRequest>(b =>
         {
-            b.ToTable("PaymentRequests", PaymentServiceConsts.DbSchema);
+            b.ToTable("PaymentRequests");
             b.ConfigureByConvention();
             b.Property(x => x.Amount).HasColumnType("decimal(18,2)");
         });
 
         builder.Entity<PaymentAuditLog>(b =>
         {
-            b.ToTable("PaymentAuditLogs", PaymentServiceConsts.DbSchema);
+            b.ToTable("PaymentAuditLogs");
             b.ConfigureByConvention();
         });
 
         builder.Entity<Refund>(b =>
         {
-            b.ToTable("Refunds", PaymentServiceConsts.DbSchema);
+            b.ToTable("Refunds");
             b.ConfigureByConvention();
             b.Property(x => x.Amount).HasColumnType("decimal(18,2)");
         });
