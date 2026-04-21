@@ -13,7 +13,7 @@ namespace LTC.PaymentService.Controllers;
 
 [RemoteService(Name = PaymentServiceRemoteServiceConsts.RemoteServiceName)]
 [Area(PaymentServiceRemoteServiceConsts.ModuleName)]
-[Route("/ltc/payment-service/api")]
+[Route("/ltc/payment-service")]
 [Authorize(Roles = "Admin,Manager")]
 public class PaymentRequestController : AbpControllerBase
 {
