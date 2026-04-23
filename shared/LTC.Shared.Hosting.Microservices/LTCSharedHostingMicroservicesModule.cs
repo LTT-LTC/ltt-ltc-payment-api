@@ -1,4 +1,4 @@
-using Hangfire;
+﻿using Hangfire;
 using Hangfire.RecurringJobAdmin;
 using Hangfire.Redis.StackExchange;
 using Medallion.Threading;
@@ -19,6 +19,9 @@ using Volo.Abp.Caching.StackExchangeRedis;
 using Volo.Abp.DistributedLocking;
 using Volo.Abp.Guids;
 using Volo.Abp.Modularity;
+
+using LTC.Shared.Hosting.Microservices.MultiTenancy;
+using Microsoft.AspNetCore.Mvc;
 
 namespace LTC.Shared.Hosting.Microservices
 {
@@ -87,3 +90,5 @@ namespace LTC.Shared.Hosting.Microservices
         }
     }
 }
+
+

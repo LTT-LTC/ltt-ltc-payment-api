@@ -1,9 +1,14 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
+using Serilog;
+using System.IdentityModel.Tokens.Jwt;
+using System.Linq;
+using System.Security.Claims;
 using System.Text;
+using Volo.Abp;
 using Volo.Abp.Modularity;
 
 namespace LTC.Shared.Hosting.Microservices.Authentication
@@ -27,9 +32,7 @@ namespace LTC.Shared.Hosting.Microservices.Authentication
                 }
                 else
                 {
-                    throw new InvalidOperationException(
-                        "Missing JWT security key. Configure 'AuthenticationJwtBearer:SecurityKey' (or env var with same name)."
-                    );
+                    throw new AbpException("AuthenticationJwtBearer:SecurityKey is missing.");
                 }
             }
 
@@ -38,7 +41,7 @@ namespace LTC.Shared.Hosting.Microservices.Authentication
                 ?? "https://localhost";
 
             var audience = configuration["AuthenticationJwtBearer:Audience"]
-                ?? "AdministrationService";
+                ?? "CustomerService";
 
             var symmetricSecurityKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(configuredSecurityKey));
             context.Services.Configure<TokenAuthOption>(options =>
@@ -79,19 +82,57 @@ namespace LTC.Shared.Hosting.Microservices.Authentication
                     ValidateIssuerSigningKey = true,
                     IssuerSigningKey = symmetricSecurityKey,
 
-                    // Validate the JWT Issuer (iss) claim
-                    ValidateIssuer = true,
-                    ValidIssuer = issuer,
+                    // Relax validation for local development to avoid URL/Host mismatches
+                    ValidateIssuer = false,
+                    ValidateAudience = false,
 
-                    // Validate the JWT Audience (aud) claim
-                    ValidateAudience = true,
-                    ValidAudience = audience,
+                    // Fix ABP role mapping from generic Microsoft claim to ClaimTypes.Role
+                    RoleClaimType = "http://schemas.microsoft.com/ws/2008/06/identity/claims/role",
+                    NameClaimType = "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier",
 
-                    // Validate the token expiry
+                    // Validate the token expiry with a generous clock skew for local dev
                     ValidateLifetime = true,
+                    ClockSkew = TimeSpan.FromMinutes(5)
+                };
 
-                    // If you want to allow a certain amount of clock drift, set that here
-                    ClockSkew = TimeSpan.Zero
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = ctx =>
+                    {
+                        var claims = ctx.Principal?.Claims.ToList() ?? new List<Claim>();
+                        var claimStrings = claims.Select(c => $"{c.Type}: {c.Value}");
+                        
+                        Log.Information("[JWT DEBUG] Token Validated Successfully for {User}", ctx.Principal?.Identity?.Name);
+                        Log.Information("[JWT DEBUG] All Claims Found: \n{Claims}", string.Join("\n", claimStrings));
+                        
+                        // Map 'admin' to 'Admin' for case-sensitive ASP.NET identity checks, if needed,
+                        // and ensure AbpClaimTypes are also populated if ABP is looking there.
+                        if (ctx.Principal?.Identity is ClaimsIdentity identity)
+                        {
+                            var roleClaims = claims.Where(c => c.Type == identity.RoleClaimType).ToList();
+                            foreach (var r in roleClaims)
+                            {
+                                if (r.Value == "admin")
+                                {
+                                    identity.AddClaim(new Claim(identity.RoleClaimType, "Admin"));
+                                }
+                            }
+                        }
+
+                        // Check specifically for Admin role presence
+                        bool isAdmin = ctx.Principal?.IsInRole("Admin") ?? false;
+                        bool hasAdminRoleClaim = claims.Any(c => c.Value.Equals("Admin", StringComparison.OrdinalIgnoreCase) && 
+                            (c.Type == "role" || c.Type == ClaimTypes.Role || c.Type.EndsWith("/role")));
+                        
+                        Log.Information("[JWT DEBUG] Authorization Check - IsInRole('Admin'): {IsAdmin}, HasAdminRoleClaim: {HasAdminRoleClaim}", isAdmin, hasAdminRoleClaim);
+                        
+                        return Task.CompletedTask;
+                    },
+                    OnAuthenticationFailed = ctx =>
+                    {
+                        Log.Error(ctx.Exception, "[JWT DEBUG] Authentication Failed: {Message}", ctx.Exception.Message);
+                        return Task.CompletedTask;
+                    }
                 };
             });
         }

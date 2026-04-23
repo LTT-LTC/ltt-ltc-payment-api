@@ -1,5 +1,6 @@
-using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Volo.Abp.Uow;
 using Volo.Abp.AuditLogging.EntityFrameworkCore;
 using Volo.Abp.EntityFrameworkCore;
@@ -16,7 +17,8 @@ namespace LTC.PaymentService.EntityFrameworkCore;
 [DependsOn(
     typeof(PaymentServiceDomainModule),
     typeof(AbpEntityFrameworkCoreSqlServerModule),
-    typeof(AbpAuditLoggingEntityFrameworkCoreModule)
+    typeof(AbpAuditLoggingEntityFrameworkCoreModule),
+    typeof(Volo.Abp.TenantManagement.EntityFrameworkCore.AbpTenantManagementEntityFrameworkCoreModule)
 )]
 public class PaymentServiceEntityFrameworkCoreModule : AbpModule
 {
@@ -33,6 +35,8 @@ public class PaymentServiceEntityFrameworkCoreModule : AbpModule
                  * default repositories only for aggregate roots */
             options.AddDefaultRepositories(includeAllEntities: true);
         });
+
+        context.Services.Replace(ServiceDescriptor.Singleton<IModelCacheKeyFactory, TenantModelCacheKeyFactory>());
 
         Configure<AbpDbContextOptions>(options =>
         {

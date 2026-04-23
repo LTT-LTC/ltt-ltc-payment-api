@@ -1,10 +1,12 @@
 using System;
 using Volo.Abp.Domain.Entities;
+using Volo.Abp.MultiTenancy;
 
 namespace LTC.PaymentService.Entities;
 
-public class Refund : Entity<Guid>
+public class Refund : Entity<Guid>, IMultiTenant
 {
+    public Guid? TenantId { get; set; }
     public Guid BookingId { get; set; }
     public Guid PaymentId { get; set; }
     public decimal Amount { get; set; }

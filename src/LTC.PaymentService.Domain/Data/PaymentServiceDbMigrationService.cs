@@ -5,6 +5,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Volo.Abp.Data;
 using Volo.Abp.DependencyInjection;
+using Volo.Abp.MultiTenancy;
+using Volo.Abp.TenantManagement;
+using LTC.PaymentService.MultiTenancy;
 
 namespace LTC.PaymentService.Data;
 
@@ -14,12 +17,18 @@ public class PaymentServiceDbMigrationService : ITransientDependency
 
     private readonly IDataSeeder _dataSeeder;
     private readonly IEnumerable<IPaymentServiceDbSchemaMigrator> _dbSchemaMigrators;
+    private readonly ITenantRepository _tenantRepository;
+    private readonly ICurrentTenant _currentTenant;
 
     public PaymentServiceDbMigrationService(
         IDataSeeder dataSeeder,
+        ITenantRepository tenantRepository,
+        ICurrentTenant currentTenant,
         IEnumerable<IPaymentServiceDbSchemaMigrator> dbSchemaMigrators)
     {
         _dataSeeder = dataSeeder;
+        _tenantRepository = tenantRepository;
+        _currentTenant = currentTenant;
         _dbSchemaMigrators = dbSchemaMigrators;
 
         Logger = NullLogger<PaymentServiceDbMigrationService>.Instance;
@@ -33,11 +42,30 @@ public class PaymentServiceDbMigrationService : ITransientDependency
         await SeedDataAsync();
 
         Logger.LogInformation("Successfully completed host database migrations.");
+
+        if (MultiTenancyConsts.IsEnabled)
+        {
+            var tenants = await _tenantRepository.GetListAsync(includeDetails: true);
+
+            foreach (var tenant in tenants)
+            {
+                using (_currentTenant.Change(tenant.Id))
+                {
+                    await MigrateDatabaseSchemaAsync(tenant);
+                    await SeedDataAsync(tenant);
+                }
+
+                Logger.LogInformation($"Successfully completed {tenant.Name} tenant database migrations.");
+            }
+
+            Logger.LogInformation("Successfully completed all database migrations.");
+        }
     }
 
-    private async Task MigrateDatabaseSchemaAsync()
+    private async Task MigrateDatabaseSchemaAsync(Tenant? tenant = null)
     {
-        Logger.LogInformation("Migrating schema for host database...");
+        Logger.LogInformation(
+            $"Migrating schema for {(tenant == null ? "host" : tenant.Name + " tenant")} database...");
 
         foreach (var migrator in _dbSchemaMigrators)
         {
@@ -45,10 +73,10 @@ public class PaymentServiceDbMigrationService : ITransientDependency
         }
     }
 
-    private async Task SeedDataAsync()
+    private async Task SeedDataAsync(Tenant? tenant = null)
     {
-        Logger.LogInformation("Executing host database seed...");
+        Logger.LogInformation($"Executing {(tenant == null ? "host" : tenant.Name + " tenant")} database seed...");
 
-        await _dataSeeder.SeedAsync(new DataSeedContext());
+        await _dataSeeder.SeedAsync(new DataSeedContext(tenant?.Id));
     }
 }
