@@ -15,6 +15,7 @@ namespace LTC.PaymentService.Controllers;
 [Area(PaymentServiceRemoteServiceConsts.ModuleName)]
 [Route("/ltc/payment-service")]
 [Authorize(Roles = "Admin,Manager")]
+[Obsolete("Use role-specific endpoints under /admin or /manager. This route remains for compatibility.")]
 public class PaymentRequestController : AbpControllerBase
 {
     private readonly IPaymentRequestAppService _appService;

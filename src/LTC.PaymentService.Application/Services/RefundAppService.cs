@@ -10,6 +10,7 @@ using LTC.PaymentService.Dtos.Input;
 using LTC.PaymentService.Dtos.Output;
 using LTC.PaymentService.Entities;
 using LTC.PaymentService.Interfaces;
+using LTC.Shared.Hosting.Microservices.Timing;
 using Microsoft.EntityFrameworkCore;
 
 namespace LTC.PaymentService.Services;
@@ -18,13 +19,16 @@ public class RefundAppService : ApplicationService, IRefundAppService
 {
     private readonly IRepository<Refund, Guid> _refundRepository;
     private readonly IRepository<Payment, Guid> _paymentRepository;
+    private readonly IGmt7Clock _gmt7Clock;
 
     public RefundAppService(
         IRepository<Refund, Guid> refundRepository,
-        IRepository<Payment, Guid> paymentRepository)
+        IRepository<Payment, Guid> paymentRepository,
+        IGmt7Clock gmt7Clock)
     {
         _refundRepository = refundRepository;
         _paymentRepository = paymentRepository;
+        _gmt7Clock = gmt7Clock;
     }
 
     public async Task<PagedResultDto<RefundOutputDto>> GetListAsync(GetRefundListInputDto input)
@@ -66,7 +70,7 @@ public class RefundAppService : ApplicationService, IRefundAppService
             Amount = input.Amount,
             Reason = input.Reason,
             Status = "PENDING",    
-            RequestedAt = DateTime.UtcNow
+            RequestedAt = _gmt7Clock.Gmt7Now
         };
 
         await _refundRepository.InsertAsync(refund);

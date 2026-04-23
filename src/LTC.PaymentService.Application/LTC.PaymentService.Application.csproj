@@ -9,12 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\shared\LTC.Shared.Hosting.Microservices\LTC.Shared.Hosting.Microservices.csproj" />
     <ProjectReference Include="..\LTC.PaymentService.Domain\LTC.PaymentService.Domain.csproj" />
     <ProjectReference Include="..\LTC.PaymentService.Application.Contracts\LTC.PaymentService.Application.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
     <PackageReference Include="System.Linq.Dynamic.Core" Version="1.7.2" />
     <PackageReference Include="Volo.Abp.Account.Application" Version="10.2.0" />
     <PackageReference Include="Volo.Abp.AutoMapper" Version="10.2.0" />
