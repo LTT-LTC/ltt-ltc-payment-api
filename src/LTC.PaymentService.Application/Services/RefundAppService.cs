@@ -31,7 +31,7 @@ public class RefundAppService : ApplicationService, IRefundAppService
         _gmt7Clock = gmt7Clock;
     }
 
-    public async Task<PagedResultDto<RefundOutputDto>> GetListAsync(GetRefundListInputDto input)
+    public async Task<PagedResultDto<RefundOutputDto>> GetRefundListAsync(GetRefundListInputDto input)
     {
         var queryable = await _refundRepository.GetQueryableAsync();
 
@@ -49,7 +49,7 @@ public class RefundAppService : ApplicationService, IRefundAppService
         );
     }
 
-    public async Task<RefundOutputDto> GetAsync(Guid id)
+    public async Task<RefundOutputDto> GetRefundAsync(Guid id)
     {
         var entity = await _refundRepository.GetAsync(id);
         return ObjectMapper.Map<Refund, RefundOutputDto>(entity);

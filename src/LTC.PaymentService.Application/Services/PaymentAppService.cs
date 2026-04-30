@@ -27,7 +27,7 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
         _auditLogRepository = auditLogRepository;
     }
 
-    public async Task<PagedResultDto<PaymentOutputDto>> GetListAsync(GetPaymentListInputDto input)
+    public async Task<PagedResultDto<PaymentOutputDto>> GetPaymentListAsync(GetPaymentListInputDto input)
     {
         var queryable = await _paymentRepository.GetQueryableAsync();
 
@@ -53,7 +53,7 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
         );
     }
 
-    public async Task<PaymentOutputDto> GetAsync(Guid id)
+    public async Task<PaymentOutputDto> GetPaymentAsync(Guid id)
     {
         var entity = await _paymentRepository.GetAsync(id);
         return ObjectMapper.Map<Payment, PaymentOutputDto>(entity);

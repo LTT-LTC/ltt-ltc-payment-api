@@ -32,7 +32,7 @@ public class RefundController : AbpControllerBase
     [ProducesResponseType(typeof(PagedResultDto<RefundOutputDto>), 200)]
     public async Task<IActionResult> GetRefundListAsync([FromQuery] GetRefundListInputDto input)
     {
-        return Ok(await _appService.GetListAsync(input));
+        return Ok(await _appService.GetRefundListAsync(input));
     }
 
     /// <summary>
@@ -42,6 +42,6 @@ public class RefundController : AbpControllerBase
     [ProducesResponseType(typeof(RefundOutputDto), 200)]
     public async Task<IActionResult> GetRefundAsync(Guid id)
     {
-        return Ok(await _appService.GetAsync(id));
+        return Ok(await _appService.GetRefundAsync(id));
     }
 }

@@ -23,7 +23,7 @@ public class PaymentRequestAppService : ApplicationService, IPaymentRequestAppSe
         _repository = repository;
     }
 
-    public async Task<PagedResultDto<PaymentRequestOutputDto>> GetListAsync(GetPaymentRequestListInputDto input)
+    public async Task<PagedResultDto<PaymentRequestOutputDto>> GetPaymentRequestListAsync(GetPaymentRequestListInputDto input)
     {
         var queryable = await _repository.GetQueryableAsync();
 
@@ -45,7 +45,7 @@ public class PaymentRequestAppService : ApplicationService, IPaymentRequestAppSe
         );
     }
 
-    public async Task<PaymentRequestOutputDto> GetAsync(Guid id)
+    public async Task<PaymentRequestOutputDto> GetPaymentRequestAsync(Guid id)
     {
         var entity = await _repository.GetAsync(id);
         return ObjectMapper.Map<PaymentRequest, PaymentRequestOutputDto>(entity);

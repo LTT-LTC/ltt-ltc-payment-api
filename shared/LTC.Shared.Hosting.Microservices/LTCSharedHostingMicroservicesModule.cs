@@ -1,6 +1,7 @@
 ﻿using Hangfire;
 using Hangfire.RecurringJobAdmin;
 using Hangfire.Redis.StackExchange;
+using LTC.Shared.Hosting.Microservices.Messaging;
 using Medallion.Threading;
 using Medallion.Threading.Redis;
 using Microsoft.AspNetCore.Builder;
@@ -8,6 +9,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Volo.Abp;
 using Volo.Abp.AspNetCore.Authentication.JwtBearer;
@@ -56,7 +58,28 @@ namespace LTC.Shared.Hosting.Microservices
             });
 
             ConfigureHangfire(context, configuration, environment, connectionMultiplexer);
+            ConfigureKafka(context, configuration);
 
+        }
+
+        private static void ConfigureKafka(ServiceConfigurationContext context, IConfiguration configuration)
+        {
+            context.Services.Configure<KafkaOptions>(configuration.GetSection(KafkaOptions.SectionName));
+            context.Services.AddSingleton<IKafkaMessagePublisher, KafkaMessagePublisher>();
+            context.Services.AddSingleton(sp =>
+            {
+                var kafkaOptions = sp.GetRequiredService<IOptions<KafkaOptions>>().Value;
+                var producerConfig = new Confluent.Kafka.ProducerConfig
+                {
+                    BootstrapServers = kafkaOptions.BootstrapServers,
+                    Acks = kafkaOptions.Producer.Acks?.ToLowerInvariant() == "all"
+                        ? Confluent.Kafka.Acks.All
+                        : Confluent.Kafka.Acks.Leader,
+                    EnableIdempotence = kafkaOptions.Producer.EnableIdempotence
+                };
+
+                return new Confluent.Kafka.ProducerBuilder<string, string>(producerConfig).Build();
+            });
         }
 
         private void ConfigureHangfire(ServiceConfigurationContext context, IConfiguration configuration, IWebHostEnvironment environment, IConnectionMultiplexer connectionMultiplexer, string prefix = "Hangfire:")
