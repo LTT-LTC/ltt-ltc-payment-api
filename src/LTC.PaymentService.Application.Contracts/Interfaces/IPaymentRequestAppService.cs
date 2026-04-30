@@ -9,6 +9,6 @@ namespace LTC.PaymentService.Interfaces;
 
 public interface IPaymentRequestAppService : IApplicationService
 {
-    Task<PagedResultDto<PaymentRequestOutputDto>> GetListAsync(GetPaymentRequestListInputDto input);
-    Task<PaymentRequestOutputDto> GetAsync(Guid id);
+    Task<PagedResultDto<PaymentRequestOutputDto>> GetPaymentRequestListAsync(GetPaymentRequestListInputDto input);
+    Task<PaymentRequestOutputDto> GetPaymentRequestAsync(Guid id);
 }

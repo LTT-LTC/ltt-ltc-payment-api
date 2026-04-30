@@ -9,7 +9,7 @@ namespace LTC.PaymentService.Interfaces;
 
 public interface IRefundAppService : IApplicationService
 {
-    Task<PagedResultDto<RefundOutputDto>> GetListAsync(GetRefundListInputDto input);
-    Task<RefundOutputDto> GetAsync(Guid id);
+    Task<PagedResultDto<RefundOutputDto>> GetRefundListAsync(GetRefundListInputDto input);
+    Task<RefundOutputDto> GetRefundAsync(Guid id);
     Task<RefundOutputDto> InitiateRefundAsync(CreateRefundInputDto input);
 }

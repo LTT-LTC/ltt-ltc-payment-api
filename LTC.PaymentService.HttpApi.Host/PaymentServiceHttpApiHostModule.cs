@@ -16,6 +16,7 @@ using LTC.Shared.Hosting.Microservices;
 using LTC.Shared.Hosting.Microservices.Authentication;
 using LTC.Shared.Hosting.Microservices.MultiTenancy;
 using LTC.Shared.Hosting.Microservices.OpenApi.Swagger;
+using LTC.PaymentService.Services.Kafka;
 using Microsoft.OpenApi;
 using OpenIddict.Validation.AspNetCore;
 using Volo.Abp;
@@ -89,6 +90,7 @@ public class PaymentServiceHttpApiHostModule : AbpModule
             options.Filters.Add(typeof(LTC.Shared.Hosting.Microservices.ApplicationExceptionFilterAttribute));
             options.Filters.Add(typeof(TenantValidationFilter));
         });
+        context.Services.AddHostedService<BookingRequestedConsumer>();
     }
 
     private void ConfigureAuthentication(ServiceConfigurationContext context)

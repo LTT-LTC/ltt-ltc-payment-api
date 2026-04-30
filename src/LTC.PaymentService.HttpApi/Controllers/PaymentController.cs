@@ -32,7 +32,7 @@ public class PaymentController : AbpControllerBase
     [ProducesResponseType(typeof(PagedResultDto<PaymentOutputDto>), 200)]
     public async Task<IActionResult> GetPaymentListAsync([FromQuery] GetPaymentListInputDto input)
     {
-        return Ok(await _appService.GetListAsync(input));
+        return Ok(await _appService.GetPaymentListAsync(input));
     }
 
     /// <summary>
@@ -42,7 +42,7 @@ public class PaymentController : AbpControllerBase
     [ProducesResponseType(typeof(PaymentOutputDto), 200)]
     public async Task<IActionResult> GetPaymentAsync(Guid id)
     {
-        return Ok(await _appService.GetAsync(id));
+        return Ok(await _appService.GetPaymentAsync(id));
     }
 
     /// <summary>
