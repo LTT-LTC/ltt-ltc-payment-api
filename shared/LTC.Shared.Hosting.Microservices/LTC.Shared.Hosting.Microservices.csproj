@@ -42,6 +42,7 @@
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" Version="4.2.1-nblumhardt-02317" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="10.0.1" />
     <PackageReference Include="Volo.Abp.AspNetCore.Authentication.JwtBearer" Version="10.1.1" />
+    <PackageReference Include="Volo.Abp.AspNetCore.MultiTenancy" Version="10.1.1" />
     <PackageReference Include="Volo.Abp.BackgroundJobs" Version="10.1.1" />
     <PackageReference Include="Volo.Abp.BackgroundJobs.HangFire" Version="10.1.1" />
     <PackageReference Include="Volo.Abp.BackgroundWorkers.Hangfire" Version="10.1.1" />
