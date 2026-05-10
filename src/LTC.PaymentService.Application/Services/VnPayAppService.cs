@@ -96,7 +96,7 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             Currency = "VND",
             PaymentGateway = "VNPAY",
             GatewayOrderId = null,
-            ReturnUrl = null,
+            ReturnUrl = ResolveFrontendOrigin(),
             NotifyUrl = null,
             CreatedAt = now,
             ExpiredAt = now.AddMinutes(Math.Max(1, _options.OrderExpireMinutes))
@@ -122,11 +122,19 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
 
         if (MultiTenancyConsts.IsEnabled)
         {
-            await _vnpayTxnRoutingRepository.InsertAsync(new VnpayTxnRouting(paymentRequest.Id)
+            try
             {
-                TenantId = CurrentTenant.Id!.Value,
-                TenantName = ResolveTenantNameForVnpayRouting()
-            }, autoSave: true);
+                await _vnpayTxnRoutingRepository.InsertAsync(new VnpayTxnRouting(paymentRequest.Id)
+                {
+                    TenantId = CurrentTenant.Id!.Value,
+                    TenantName = ResolveTenantNameForVnpayRouting()
+                }, autoSave: true);
+            }
+            catch (Exception ex) when (IsMissingVnpayRoutingTable(ex))
+            {
+                throw new UserFriendlyException(
+                    "Payment routing table is missing: dbo.VnpayTxnRoutings. Run migrations (or create the table) on payment DB before creating VNPAY URLs.");
+            }
         }
 
         var locale = string.IsNullOrWhiteSpace(input.Locale) ? "vn" : input.Locale!;
@@ -162,86 +170,111 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
 
     public async Task<VnPayIpnResponseDto> ProcessIpnAsync(IReadOnlyDictionary<string, string> queryParameters)
     {
-        var query = NormalizeQuery(queryParameters);
-
-        if (!VnPayLibrary.HasAnyVnpParameter(query))
-            return Rsp("99", "Input data required");
-
-        if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
-            return Rsp("97", "Invalid Signature");
-
-        if (!query.TryGetValue("vnp_TxnRef", out var txnRef) || !Guid.TryParse(txnRef, out var paymentRequestId))
-            return Rsp("01", "Order not found");
-
-        if (!query.TryGetValue("vnp_Amount", out var vnpAmountStr))
-            return Rsp("04", "Invalid amount");
-
-        if (!VnPayLibrary.TryParseVnpAmountMajor(vnpAmountStr, out var vnpAmountMajor))
-            return Rsp("04", "Invalid amount");
-
-        IDisposable? tenantScope = null;
         try
         {
-            if (MultiTenancyConsts.IsEnabled)
-            {
-                var routing = await _vnpayTxnRoutingRepository.FindAsync(paymentRequestId);
-                if (routing == null)
-                    return Rsp("01", "Order not found");
+            var query = NormalizeQuery(queryParameters);
 
-                tenantScope = _currentTenant.Change(routing.TenantId, routing.TenantName);
-            }
+            if (!VnPayLibrary.HasAnyVnpParameter(query))
+                return Rsp("99", "Input data required");
 
-            var paymentRequest = await _paymentRequestRepository.FirstOrDefaultAsync(x => x.Id == paymentRequestId);
-            if (paymentRequest == null)
+            if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
+                return Rsp("97", "Invalid Signature");
+
+            if (!query.TryGetValue("vnp_TxnRef", out var txnRef) || !Guid.TryParse(txnRef, out var paymentRequestId))
                 return Rsp("01", "Order not found");
 
-            var payment = await _paymentRepository.FirstOrDefaultAsync(x => x.PaymentRequestId == paymentRequest.Id);
-            if (payment == null)
-                return Rsp("01", "Order not found");
-
-            if (vnpAmountMajor != paymentRequest.Amount)
+            if (!query.TryGetValue("vnp_Amount", out var vnpAmountStr))
                 return Rsp("04", "Invalid amount");
 
-            if (payment.PaymentStatus == "SUCCESS")
-                return Rsp("02", "Order already confirmed");
+            if (!VnPayLibrary.TryParseVnpAmountMajor(vnpAmountStr, out var vnpAmountMajor))
+                return Rsp("04", "Invalid amount");
 
-            if (payment.PaymentStatus == "FAILED")
+            IDisposable? tenantScope = null;
+            try
+            {
+                if (MultiTenancyConsts.IsEnabled)
+                {
+                    var routing = await _vnpayTxnRoutingRepository.FindAsync(paymentRequestId);
+                    if (routing == null)
+                        return Rsp("01", "Order not found");
+
+                    tenantScope = _currentTenant.Change(routing.TenantId, routing.TenantName);
+                }
+
+                var paymentRequest = await _paymentRequestRepository.FirstOrDefaultAsync(x => x.Id == paymentRequestId);
+                if (paymentRequest == null)
+                    return Rsp("01", "Order not found");
+
+                var payment = await _paymentRepository.FirstOrDefaultAsync(x => x.PaymentRequestId == paymentRequest.Id);
+                if (payment == null)
+                    return Rsp("01", "Order not found");
+
+                if (vnpAmountMajor != paymentRequest.Amount)
+                    return Rsp("04", "Invalid amount");
+
+                if (payment.PaymentStatus == "SUCCESS")
+                    return Rsp("02", "Order already confirmed");
+
+                if (payment.PaymentStatus == "FAILED")
+                    return Rsp("00", "Confirm success");
+
+                await ApplyVnpGatewayCallbackAsync(paymentRequest, payment, query, auditEventType: "VnpayIpn");
+
                 return Rsp("00", "Confirm success");
-
-            await ApplyVnpGatewayCallbackAsync(paymentRequest, payment, query, auditEventType: "VnpayIpn");
-
-            return Rsp("00", "Confirm success");
+            }
+            finally
+            {
+                tenantScope?.Dispose();
+            }
         }
-        finally
+        catch
         {
-            tenantScope?.Dispose();
+            // VNPAY expects 200 + JSON response body, not server 500.
+            return Rsp("99", "Unknown error");
         }
     }
 
     public async Task<string> ProcessReturnAsync(IReadOnlyDictionary<string, string> queryParameters)
     {
-        var query = NormalizeQuery(queryParameters);
+        try
+        {
+            var query = NormalizeQuery(queryParameters);
 
-        if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
+            if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
+                return _options.FrontendFailureUrl;
+
+            // Same callback params as IPN: persist SUCCESS/FAILED when IPN never reaches this host (localhost, firewall).
+            await TryFinalizePaymentFromBrowserReturnAsync(query);
+
+            var responseCode = query.GetValueOrDefault("vnp_ResponseCode");
+            var transactionStatus = query.GetValueOrDefault("vnp_TransactionStatus");
+            var success = responseCode == "00" && transactionStatus == "00";
+
+            if (!Guid.TryParse(query.GetValueOrDefault("vnp_TxnRef"), out var paymentRequestId))
+                return success ? _options.FrontendSuccessUrl : _options.FrontendFailureUrl;
+
+            var returnContext = await TryResolveReturnContextAsync(paymentRequestId);
+            var bookingId = returnContext.BookingId;
+
+            if (bookingId.HasValue && !string.IsNullOrWhiteSpace(returnContext.FrontendOrigin))
+            {
+                var targetPath = success
+                    ? $"/booking/{bookingId.Value:D}/processing?vnpay=1&status=success"
+                    : $"/booking/{bookingId.Value:D}/payment?vnpay=1&status=failed";
+                return CombineUrl(returnContext.FrontendOrigin, targetPath);
+            }
+
+            var baseUrl = success ? _options.FrontendSuccessUrl : _options.FrontendFailureUrl;
+            return AppendBookingIdQuery(baseUrl, bookingId);
+        }
+        catch
+        {
+            // Never fail hard on browser return; always redirect user to failure flow.
             return _options.FrontendFailureUrl;
-
-        // Same callback params as IPN: persist SUCCESS/FAILED when IPN never reaches this host (localhost, firewall).
-        await TryFinalizePaymentFromBrowserReturnAsync(query);
-
-        var responseCode = query.GetValueOrDefault("vnp_ResponseCode");
-        var transactionStatus = query.GetValueOrDefault("vnp_TransactionStatus");
-        var success = responseCode == "00" && transactionStatus == "00";
-
-        var baseUrl = success ? _options.FrontendSuccessUrl : _options.FrontendFailureUrl;
-
-        if (!Guid.TryParse(query.GetValueOrDefault("vnp_TxnRef"), out var paymentRequestId))
-            return baseUrl;
-
-        var bookingId = await TryResolveBookingIdAsync(paymentRequestId);
-        return AppendBookingIdQuery(baseUrl, bookingId);
+        }
     }
 
-    private async Task<Guid?> TryResolveBookingIdAsync(Guid paymentRequestId)
+    private async Task<(Guid? BookingId, string? FrontendOrigin)> TryResolveReturnContextAsync(Guid paymentRequestId)
     {
         IDisposable? tenantScope = null;
         try
@@ -250,13 +283,13 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             {
                 var routing = await _vnpayTxnRoutingRepository.FindAsync(paymentRequestId);
                 if (routing == null)
-                    return null;
+                    return (null, null);
 
                 tenantScope = _currentTenant.Change(routing.TenantId, routing.TenantName);
             }
 
             var paymentRequest = await _paymentRequestRepository.FirstOrDefaultAsync(x => x.Id == paymentRequestId);
-            return paymentRequest?.BookingId;
+            return (paymentRequest?.BookingId, paymentRequest?.ReturnUrl);
         }
         finally
         {
@@ -428,5 +461,44 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             return "Payment";
 
         return orderInfo.Length <= 255 ? orderInfo : orderInfo[..255];
+    }
+
+    private static bool IsMissingVnpayRoutingTable(Exception ex)
+    {
+        return ex.ToString().Contains("VnpayTxnRoutings", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string ResolveFrontendOrigin()
+    {
+        var http = _httpContextAccessor.HttpContext;
+        if (http != null)
+        {
+            if (TryGetOriginFromHeader(http.Request.Headers["Origin"], out var origin))
+                return origin;
+
+            if (TryGetOriginFromHeader(http.Request.Headers["Referer"], out var refererOrigin))
+                return refererOrigin;
+        }
+
+        if (TryGetOriginFromHeader(_options.FrontendSuccessUrl, out var fromSuccess))
+            return fromSuccess;
+
+        if (TryGetOriginFromHeader(_options.FrontendFailureUrl, out var fromFailure))
+            return fromFailure;
+
+        return string.Empty;
+    }
+
+    private static bool TryGetOriginFromHeader(string? raw, out string origin)
+    {
+        origin = string.Empty;
+        if (string.IsNullOrWhiteSpace(raw))
+            return false;
+
+        if (!Uri.TryCreate(raw.Trim(), UriKind.Absolute, out var uri))
+            return false;
+
+        origin = $"{uri.Scheme}://{uri.Authority}";
+        return true;
     }
 }
