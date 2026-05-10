@@ -182,6 +182,112 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
         return dto;
     }
 
+    public async Task<DashboardSummaryOutputDto> GetDashboardSummaryAsync(DashboardSummaryInputDto input)
+    {
+        var queryable = await _paymentRepository.GetQueryableAsync();
+        queryable = queryable.Where(x => x.PaymentStatus == "SUCCESS");
+
+        if (input.FromDate != default)
+            queryable = queryable.Where(x => x.PaidTime >= input.FromDate);
+        if (input.ToDate != default)
+            queryable = queryable.Where(x => x.PaidTime <= input.ToDate);
+
+        var payments = await queryable.OrderBy(x => x.PaidTime).ToListAsync();
+        var dtos = MapPaymentsToDtos(payments);
+        await ApplyPaymentRequestEnrichmentAsync(payments, dtos);
+        await ApplyBookingEnrichmentAsync(dtos);
+
+        var result = new DashboardSummaryOutputDto();
+
+        var dailyMap = new Dictionary<string, DailyRevenueDto>();
+        var hourlyMap = new Dictionary<string, HourlyRevenueDto>();
+        var movieMap = new Dictionary<string, MovieRevenueDto>();
+
+        foreach (var dto in dtos)
+        {
+            var paidTime = dto.PaidTime ?? dto.BookingCreatedAt;
+            if (paidTime == null) continue;
+
+            decimal ticketRev = dto.Amount;
+            decimal fnbRev = 0;
+            decimal totalRev = dto.Amount;
+            int seatCount = 1;
+
+            if (!string.IsNullOrEmpty(dto.BookingSnapshotJson))
+            {
+                try
+                {
+                    var snap = System.Text.Json.JsonSerializer.Deserialize<BookingSnapshotData>(
+                        dto.BookingSnapshotJson,
+                        new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                    if (snap?.TicketTotal.HasValue == true)
+                    {
+                        ticketRev = snap.TicketTotal.Value;
+                        fnbRev = snap.ExtrasTotal ?? 0;
+                        totalRev = snap.GrandTotal ?? (ticketRev + fnbRev);
+                    }
+                    if (snap?.Seats != null && snap.Seats.Count > 0)
+                        seatCount = snap.Seats.Count;
+                }
+                catch { /* ignore parse errors */ }
+            }
+            else if (!string.IsNullOrEmpty(dto.BookingSeatCodes))
+            {
+                seatCount = dto.BookingSeatCodes.Split(',', StringSplitOptions.RemoveEmptyEntries).Length;
+            }
+
+            result.Totals.TotalRevenue += totalRev;
+            result.Totals.TicketRevenue += ticketRev;
+            result.Totals.FnbRevenue += fnbRev;
+            result.Totals.TicketsSold += seatCount;
+            result.Totals.TransactionCount++;
+
+            var dateKey = paidTime.Value.ToString("yyyy-MM-dd");
+            if (!dailyMap.TryGetValue(dateKey, out var dailyRow))
+            {
+                dailyRow = new DailyRevenueDto { Date = dateKey };
+                dailyMap[dateKey] = dailyRow;
+            }
+            dailyRow.TicketRevenue += ticketRev;
+            dailyRow.FnbRevenue += fnbRev;
+            dailyRow.TotalRevenue += totalRev;
+            dailyRow.TicketsSold += seatCount;
+
+            var hourKey = paidTime.Value.ToString("HH");
+            if (!hourlyMap.TryGetValue(hourKey, out var hourlyRow))
+            {
+                hourlyRow = new HourlyRevenueDto { Hour = hourKey };
+                hourlyMap[hourKey] = hourlyRow;
+            }
+            hourlyRow.Revenue += totalRev;
+            hourlyRow.TransactionCount++;
+
+            var showtimeId = dto.BookingShowtimeId?.ToString() ?? "unknown";
+            if (!movieMap.TryGetValue(showtimeId, out var movieRow))
+            {
+                movieRow = new MovieRevenueDto { ShowtimeId = dto.BookingShowtimeId };
+                movieMap[showtimeId] = movieRow;
+            }
+            movieRow.Revenue += totalRev;
+            movieRow.TicketsSold += seatCount;
+        }
+
+        result.DailyBreakdown = dailyMap.Values.OrderBy(d => d.Date).ToList();
+
+        for (int h = 0; h < 24; h++)
+        {
+            var key = h.ToString("D2");
+            if (!hourlyMap.ContainsKey(key))
+                hourlyMap[key] = new HourlyRevenueDto { Hour = key };
+        }
+        result.HourlyTrend = hourlyMap.Values.OrderBy(h => h.Hour).ToList();
+
+        result.TopMovies = movieMap.Values.OrderByDescending(m => m.Revenue).Take(10).ToList();
+
+        return result;
+    }
+
     /// <summary>
     /// Explicit mapping avoids reliance on Mapperly list-registration at runtime (ObjectMapper often misses List{T}-to-List{T}).
     /// </summary>
@@ -275,5 +381,14 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
             dto.BookingExpiredAt = b.ExpiredAt;
             dto.BookingSnapshotJson = b.SnapshotJson;
         }
+    }
+
+    private class BookingSnapshotData
+    {
+        public decimal? GrandTotal { get; set; }
+        public decimal? TicketTotal { get; set; }
+        public decimal? ExtrasTotal { get; set; }
+        public decimal? Discount { get; set; }
+        public List<string>? Seats { get; set; }
     }
 }
