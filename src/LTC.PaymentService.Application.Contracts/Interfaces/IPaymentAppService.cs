@@ -18,4 +18,7 @@ public interface IPaymentAppService : IApplicationService
 
     /// <summary>Single payment if it belongs to the authenticated customer.</summary>
     Task<PaymentOutputDto> GetMyPaymentAsync(Guid id);
+
+    /// <summary>Aggregated dashboard summary for admin/manager (revenue, tickets, hourly trend, top movies).</summary>
+    Task<DashboardSummaryOutputDto> GetDashboardSummaryAsync(DashboardSummaryInputDto input);
 }
