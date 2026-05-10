@@ -13,6 +13,7 @@ using LTC.PaymentService.Dtos.Input;
 using LTC.PaymentService.Dtos.Output;
 using LTC.PaymentService.Entities;
 using LTC.PaymentService.Interfaces;
+using LTC.PaymentService.Services.Integration;
 using Microsoft.EntityFrameworkCore;
 
 namespace LTC.PaymentService.Services;
@@ -22,15 +23,18 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
     private readonly IRepository<Payment, Guid> _paymentRepository;
     private readonly IRepository<PaymentRequest, Guid> _paymentRequestRepository;
     private readonly IRepository<PaymentAuditLog, Guid> _auditLogRepository;
+    private readonly ICustomerBookingSummaryClient _bookingSummaryClient;
 
     public PaymentAppService(
         IRepository<Payment, Guid> paymentRepository,
         IRepository<PaymentRequest, Guid> paymentRequestRepository,
-        IRepository<PaymentAuditLog, Guid> auditLogRepository)
+        IRepository<PaymentAuditLog, Guid> auditLogRepository,
+        ICustomerBookingSummaryClient bookingSummaryClient)
     {
         _paymentRepository = paymentRepository;
         _paymentRequestRepository = paymentRequestRepository;
         _auditLogRepository = auditLogRepository;
+        _bookingSummaryClient = bookingSummaryClient;
     }
 
     public async Task<PagedResultDto<PaymentOutputDto>> GetPaymentListAsync(GetPaymentListInputDto input)
@@ -62,22 +66,29 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
         var totalCount = await queryable.CountAsync();
         var items = await queryable.OrderBy(input.Sorting).PageBy(input.SkipCount, input.MaxResultCount).ToListAsync();
 
+        var dtos = ObjectMapper.Map<List<Payment>, List<PaymentOutputDto>>(items);
+        await ApplyPaymentRequestEnrichmentAsync(items, dtos);
+        await ApplyBookingEnrichmentAsync(dtos);
+
         return new PagedResultDto<PaymentOutputDto>(
             totalCount,
-            ObjectMapper.Map<List<Payment>, List<PaymentOutputDto>>(items)
+            dtos
         );
     }
 
     public async Task<PaymentOutputDto> GetPaymentAsync(Guid id)
     {
         var entity = await _paymentRepository.GetAsync(id);
-        return ObjectMapper.Map<Payment, PaymentOutputDto>(entity);
+        var dto = ObjectMapper.Map<Payment, PaymentOutputDto>(entity);
+        await ApplyPaymentRequestEnrichmentAsync(new List<Payment> { entity }, new List<PaymentOutputDto> { dto });
+        await ApplyBookingEnrichmentAsync(new List<PaymentOutputDto> { dto });
+        return dto;
     }
 
     public async Task<PagedResultDto<PaymentAuditLogOutputDto>> GetAuditLogsAsync(Guid paymentId, PaginationInputDto input)
     {
         var payment = await _paymentRepository.GetAsync(paymentId);
-        
+
         var queryable = await _auditLogRepository.GetQueryableAsync();
         queryable = queryable.Where(x => x.PaymentRequestId == payment.PaymentRequestId);
 
@@ -133,9 +144,13 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
         var totalCount = await queryable.CountAsync();
         var items = await queryable.OrderBy(input.Sorting).PageBy(input.SkipCount, input.MaxResultCount).ToListAsync();
 
+        var dtos = ObjectMapper.Map<List<Payment>, List<PaymentOutputDto>>(items);
+        await ApplyPaymentRequestEnrichmentAsync(items, dtos);
+        await ApplyBookingEnrichmentAsync(dtos);
+
         return new PagedResultDto<PaymentOutputDto>(
             totalCount,
-            ObjectMapper.Map<List<Payment>, List<PaymentOutputDto>>(items)
+            dtos
         );
     }
 
@@ -161,6 +176,67 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
             throw new AbpAuthorizationException("You do not have access to this payment.");
         }
 
-        return ObjectMapper.Map<Payment, PaymentOutputDto>(entity);
+        var dto = ObjectMapper.Map<Payment, PaymentOutputDto>(entity);
+        await ApplyPaymentRequestEnrichmentAsync(new List<Payment> { entity }, new List<PaymentOutputDto> { dto });
+        await ApplyBookingEnrichmentAsync(new List<PaymentOutputDto> { dto });
+        return dto;
+    }
+
+    private async Task ApplyPaymentRequestEnrichmentAsync(IReadOnlyList<Payment> payments, List<PaymentOutputDto> dtos)
+    {
+        if (payments.Count == 0)
+        {
+            return;
+        }
+
+        var reqIds = payments.Select(p => p.PaymentRequestId).Distinct().ToList();
+        var reqs = await _paymentRequestRepository.GetListAsync(x => reqIds.Contains(x.Id));
+        var dict = reqs.ToDictionary(x => x.Id);
+
+        for (var i = 0; i < payments.Count; i++)
+        {
+            if (dict.TryGetValue(payments[i].PaymentRequestId, out var pr))
+            {
+                ApplyPaymentRequestFields(dtos[i], pr);
+            }
+        }
+    }
+
+    private static void ApplyPaymentRequestFields(PaymentOutputDto dto, PaymentRequest pr)
+    {
+        dto.Currency = pr.Currency;
+        dto.PaymentGateway = pr.PaymentGateway;
+        dto.GatewayOrderId = pr.GatewayOrderId;
+        dto.PaymentRequestCreatedAt = pr.CreatedAt;
+        dto.PaymentRequestExpiredAt = pr.ExpiredAt;
+    }
+
+    private async Task ApplyBookingEnrichmentAsync(List<PaymentOutputDto> dtos)
+    {
+        if (dtos.Count == 0)
+        {
+            return;
+        }
+
+        var bookingIds = dtos.Select(d => d.BookingId).Distinct().ToList();
+        var map = await _bookingSummaryClient.GetSummariesAsync(bookingIds, CurrentTenant.Id);
+
+        foreach (var dto in dtos)
+        {
+            if (!map.TryGetValue(dto.BookingId, out var b))
+            {
+                continue;
+            }
+
+            dto.BookingShowtimeId = b.ShowtimeId;
+            dto.BookingStatus = b.BookingStatus;
+            dto.BookingSeatCodes = b.SeatCodes;
+            dto.BookingTotalPrice = b.TotalPrice;
+            dto.BookingPaidAmount = b.PaidAmount;
+            dto.BookingDiscountAmount = b.DiscountAmount;
+            dto.BookingCreatedAt = b.CreatedAt;
+            dto.BookingExpiredAt = b.ExpiredAt;
+            dto.BookingSnapshotJson = b.SnapshotJson;
+        }
     }
 }
