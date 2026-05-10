@@ -66,7 +66,7 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
         var totalCount = await queryable.CountAsync();
         var items = await queryable.OrderBy(input.Sorting).PageBy(input.SkipCount, input.MaxResultCount).ToListAsync();
 
-        var dtos = ObjectMapper.Map<List<Payment>, List<PaymentOutputDto>>(items);
+        var dtos = MapPaymentsToDtos(items);
         await ApplyPaymentRequestEnrichmentAsync(items, dtos);
         await ApplyBookingEnrichmentAsync(dtos);
 
@@ -79,7 +79,7 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
     public async Task<PaymentOutputDto> GetPaymentAsync(Guid id)
     {
         var entity = await _paymentRepository.GetAsync(id);
-        var dto = ObjectMapper.Map<Payment, PaymentOutputDto>(entity);
+        var dto = MapPaymentToDto(entity);
         await ApplyPaymentRequestEnrichmentAsync(new List<Payment> { entity }, new List<PaymentOutputDto> { dto });
         await ApplyBookingEnrichmentAsync(new List<PaymentOutputDto> { dto });
         return dto;
@@ -97,7 +97,7 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
 
         return new PagedResultDto<PaymentAuditLogOutputDto>(
             totalCount,
-            ObjectMapper.Map<List<PaymentAuditLog>, List<PaymentAuditLogOutputDto>>(items)
+            items.Select(MapAuditLogToDto).ToList()
         );
     }
 
@@ -144,7 +144,7 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
         var totalCount = await queryable.CountAsync();
         var items = await queryable.OrderBy(input.Sorting).PageBy(input.SkipCount, input.MaxResultCount).ToListAsync();
 
-        var dtos = ObjectMapper.Map<List<Payment>, List<PaymentOutputDto>>(items);
+        var dtos = MapPaymentsToDtos(items);
         await ApplyPaymentRequestEnrichmentAsync(items, dtos);
         await ApplyBookingEnrichmentAsync(dtos);
 
@@ -176,10 +176,47 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
             throw new AbpAuthorizationException("You do not have access to this payment.");
         }
 
-        var dto = ObjectMapper.Map<Payment, PaymentOutputDto>(entity);
+        var dto = MapPaymentToDto(entity);
         await ApplyPaymentRequestEnrichmentAsync(new List<Payment> { entity }, new List<PaymentOutputDto> { dto });
         await ApplyBookingEnrichmentAsync(new List<PaymentOutputDto> { dto });
         return dto;
+    }
+
+    /// <summary>
+    /// Explicit mapping avoids reliance on Mapperly list-registration at runtime (ObjectMapper often misses List{T}-to-List{T}).
+    /// </summary>
+    private static List<PaymentOutputDto> MapPaymentsToDtos(IEnumerable<Payment> payments) =>
+        payments.Select(MapPaymentToDto).ToList();
+
+    private static PaymentOutputDto MapPaymentToDto(Payment p)
+    {
+        return new PaymentOutputDto
+        {
+            Id = p.Id,
+            TenantId = p.TenantId,
+            PaymentRequestId = p.PaymentRequestId,
+            BookingId = p.BookingId,
+            Amount = p.Amount,
+            PaymentMethod = p.PaymentMethod,
+            PaymentStatus = p.PaymentStatus,
+            PaidTime = p.PaidTime,
+            GatewayTransactionId = p.GatewayTransactionId,
+            GatewayResponseCode = p.GatewayResponseCode,
+            GatewayRawResponse = p.GatewayRawResponse,
+        };
+    }
+
+    private static PaymentAuditLogOutputDto MapAuditLogToDto(PaymentAuditLog x)
+    {
+        return new PaymentAuditLogOutputDto
+        {
+            Id = x.Id,
+            PaymentRequestId = x.PaymentRequestId,
+            EventType = x.EventType,
+            Direction = x.Direction,
+            Payload = x.Payload,
+            CreatedAt = x.CreatedAt,
+        };
     }
 
     private async Task ApplyPaymentRequestEnrichmentAsync(IReadOnlyList<Payment> payments, List<PaymentOutputDto> dtos)
