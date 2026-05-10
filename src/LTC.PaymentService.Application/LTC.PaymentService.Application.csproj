@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\shared\LTC.Shared.Hosting.Microservices\LTC.Shared.Hosting.Microservices.csproj" />
+    <ProjectReference Include="..\LTC.PaymentService.Domain.Shared\LTC.PaymentService.Domain.Shared.csproj" />
     <ProjectReference Include="..\LTC.PaymentService.Domain\LTC.PaymentService.Domain.csproj" />
     <ProjectReference Include="..\LTC.PaymentService.Application.Contracts\LTC.PaymentService.Application.Contracts.csproj" />
   </ItemGroup>
