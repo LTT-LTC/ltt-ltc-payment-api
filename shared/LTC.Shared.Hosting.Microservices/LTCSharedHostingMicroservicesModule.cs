@@ -62,7 +62,7 @@ namespace LTC.Shared.Hosting.Microservices
             });
 
             ConfigureHangfire(context, configuration, environment, connectionMultiplexer);
-            ConfigureKafka(context, configuration);
+            ConfigureRabbitMq(context, configuration);
             ConfigureSharedTenantResolution();
         }
 
@@ -84,24 +84,20 @@ namespace LTC.Shared.Hosting.Microservices
             });
         }
 
-        private static void ConfigureKafka(ServiceConfigurationContext context, IConfiguration configuration)
+        private static void ConfigureRabbitMq(ServiceConfigurationContext context, IConfiguration configuration)
         {
-            context.Services.Configure<KafkaOptions>(configuration.GetSection(KafkaOptions.SectionName));
-            context.Services.AddSingleton<IKafkaMessagePublisher, KafkaMessagePublisher>();
-            context.Services.AddSingleton(sp =>
-            {
-                var kafkaOptions = sp.GetRequiredService<IOptions<KafkaOptions>>().Value;
-                var producerConfig = new Confluent.Kafka.ProducerConfig
-                {
-                    BootstrapServers = kafkaOptions.BootstrapServers,
-                    Acks = kafkaOptions.Producer.Acks?.ToLowerInvariant() == "all"
-                        ? Confluent.Kafka.Acks.All
-                        : Confluent.Kafka.Acks.Leader,
-                    EnableIdempotence = kafkaOptions.Producer.EnableIdempotence
-                };
+            context.Services.Configure<RabbitMqOptions>(configuration.GetSection(RabbitMqOptions.SectionName));
 
-                return new Confluent.Kafka.ProducerBuilder<string, string>(producerConfig).Build();
-            });
+            var section = configuration.GetSection(RabbitMqOptions.SectionName);
+            var enabled = section.GetValue<bool?>("Enabled") ?? true;
+            var hostName = section["HostName"] ?? string.Empty;
+            if (!enabled || string.IsNullOrWhiteSpace(hostName))
+            {
+                context.Services.AddSingleton<IMessagePublisher, NullMessagePublisher>();
+                return;
+            }
+
+            context.Services.AddSingleton<IMessagePublisher, RabbitMqMessagePublisher>();
         }
 
         private void ConfigureHangfire(ServiceConfigurationContext context, IConfiguration configuration, IWebHostEnvironment environment, IConnectionMultiplexer connectionMultiplexer, string prefix = "Hangfire:")

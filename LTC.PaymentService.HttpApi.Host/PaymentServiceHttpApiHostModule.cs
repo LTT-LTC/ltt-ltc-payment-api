@@ -14,9 +14,10 @@ using Volo.Abp.AspNetCore.Mvc.UI.Theme.LeptonXLite;
 using Volo.Abp.AspNetCore.Mvc.UI.Theme.LeptonXLite.Bundling;
 using LTC.Shared.Hosting.Microservices;
 using LTC.Shared.Hosting.Microservices.Authentication;
+using LTC.Shared.Hosting.Microservices.Messaging;
 using LTC.Shared.Hosting.Microservices.MultiTenancy;
 using LTC.Shared.Hosting.Microservices.OpenApi.Swagger;
-using LTC.PaymentService.Services.Kafka;
+using LTC.PaymentService.Services.Messaging;
 using Microsoft.OpenApi;
 using OpenIddict.Validation.AspNetCore;
 using Volo.Abp;
@@ -90,7 +91,14 @@ public class PaymentServiceHttpApiHostModule : AbpModule
             options.Filters.Add(typeof(LTC.Shared.Hosting.Microservices.ApplicationExceptionFilterAttribute));
             options.Filters.Add(typeof(TenantValidationFilter));
         });
-        context.Services.AddHostedService<BookingRequestedConsumer>();
+
+        var rabbitSection = configuration.GetSection(RabbitMqOptions.SectionName);
+        var rabbitEnabled = rabbitSection.GetValue<bool?>("Enabled") ?? true;
+        var rabbitHost = rabbitSection["HostName"];
+        if (rabbitEnabled && !string.IsNullOrWhiteSpace(rabbitHost))
+        {
+            context.Services.AddHostedService<BookingRequestedConsumer>();
+        }
     }
 
     private void ConfigureAuthentication(ServiceConfigurationContext context)

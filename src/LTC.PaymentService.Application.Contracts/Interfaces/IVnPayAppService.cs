@@ -15,7 +15,8 @@ public interface IVnPayAppService : IApplicationService
     Task<VnPayIpnResponseDto> ProcessIpnAsync(IReadOnlyDictionary<string, string> queryParameters);
 
     /// <summary>
-    /// Returns an absolute URL for redirect (no payment state updates).
+    /// Browser return URL: verifies signature, redirects to frontend, and applies the same SUCCESS/FAILED
+    /// update as IPN when the payment row is still <c>PENDING</c> (covers environments where IPN cannot reach the server).
     /// </summary>
     Task<string> ProcessReturnAsync(IReadOnlyDictionary<string, string> queryParameters);
 }
