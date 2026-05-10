@@ -45,14 +45,14 @@ public class RefundAppService : ApplicationService, IRefundAppService
 
         return new PagedResultDto<RefundOutputDto>(
             totalCount,
-            ObjectMapper.Map<List<Refund>, List<RefundOutputDto>>(items)
+            items.Select(MapRefundToDto).ToList()
         );
     }
 
     public async Task<RefundOutputDto> GetRefundAsync(Guid id)
     {
         var entity = await _refundRepository.GetAsync(id);
-        return ObjectMapper.Map<Refund, RefundOutputDto>(entity);
+        return MapRefundToDto(entity);
     }
 
     public async Task<RefundOutputDto> InitiateRefundAsync(CreateRefundInputDto input)
@@ -75,6 +75,20 @@ public class RefundAppService : ApplicationService, IRefundAppService
 
         await _refundRepository.InsertAsync(refund);
 
-        return ObjectMapper.Map<Refund, RefundOutputDto>(refund);
+        return MapRefundToDto(refund);
     }
+
+    private static RefundOutputDto MapRefundToDto(Refund r) =>
+        new()
+        {
+            Id = r.Id,
+            BookingId = r.BookingId,
+            PaymentId = r.PaymentId,
+            Amount = r.Amount,
+            Reason = r.Reason,
+            Status = r.Status,
+            RequestedAt = r.RequestedAt,
+            ProcessedAt = r.ProcessedAt,
+            UpdatedAt = r.UpdatedAt,
+        };
 }
