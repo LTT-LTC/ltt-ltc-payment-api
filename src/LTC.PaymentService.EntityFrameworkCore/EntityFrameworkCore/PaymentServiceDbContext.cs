@@ -22,6 +22,7 @@ public class PaymentServiceDbContext :
     public DbSet<PaymentRequest> PaymentRequests { get; set; }
     public DbSet<PaymentAuditLog> PaymentAuditLogs { get; set; }
     public DbSet<Refund> Refunds { get; set; }
+    public DbSet<VnpayTxnRouting> VnpayTxnRoutings { get; set; }
 
     private readonly ITenantSchemaResolver? _tenantSchemaResolver;
 
@@ -60,6 +61,15 @@ public class PaymentServiceDbContext :
             b.ToTable("PaymentRequests");
             b.ConfigureByConvention();
             b.Property(x => x.Amount).HasColumnType("decimal(18,2)");
+            b.HasIndex(x => x.GatewayOrderId)
+                .IsUnique()
+                .HasFilter("[GatewayOrderId] IS NOT NULL");
+        });
+
+        builder.Entity<VnpayTxnRouting>(b =>
+        {
+            b.ToTable("VnpayTxnRoutings", "dbo");
+            b.ConfigureByConvention();
         });
 
         builder.Entity<PaymentAuditLog>(b =>

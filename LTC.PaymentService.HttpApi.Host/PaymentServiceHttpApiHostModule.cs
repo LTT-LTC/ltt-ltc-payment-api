@@ -97,8 +97,7 @@ public class PaymentServiceHttpApiHostModule : AbpModule
     {
     }
 
-    private void 
-        ConfigureBundles()
+    private void ConfigureBundles()
     {
         Configure<AbpBundlingOptions>(options =>
         {
@@ -186,14 +185,12 @@ public class PaymentServiceHttpApiHostModule : AbpModule
         var app = context.GetApplicationBuilder();
         var env = context.GetEnvironment();
 
-        app.UsePathBase("/ltc/payment-service");
+        // YARP forwards /ltc/payment-service/... unchanged; do not use PathBase here or Swagger paths stop matching.
 
         if (env.IsDevelopment())
         {
             app.UseDeveloperExceptionPage();
         }
-
-        app.UseAbpRequestLocalization();
 
         if (!env.IsDevelopment())
         {
@@ -202,17 +199,17 @@ public class PaymentServiceHttpApiHostModule : AbpModule
 
         app.UseCorrelationId();
         app.MapAbpStaticAssets();
-
-        app.UseConfiguredSwagger("LTC Payment Service", "ltc/payment-service/swagger");
-
         app.UseRouting();
         app.UseCors();
+        app.UseConfiguredSwagger("LTC Payment Service", "ltc/payment-service/swagger");
         app.UseAuthentication();
 
         if (MultiTenancyConsts.IsEnabled)
         {
             app.UseMultiTenancy();
         }
+
+        app.UseAbpRequestLocalization();
         app.UseUnitOfWork();
         app.UseDynamicClaims();
         app.UseAuthorization();
