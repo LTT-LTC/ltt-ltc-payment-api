@@ -27,7 +27,8 @@ The same actions are registered under both prefixes so callers can use either ga
 
 Customer web app calls typically use `NEXT_PUBLIC_API_URL` plus `/payment-service/api/payment/...` (same pattern as admin booking calls under `/payment-service`). If your gateway only exposes the `/ltc/...` prefix, use that path instead.
 
-- `POST .../create-payment-url` (authenticated, `X-Tenant` when multi-tenancy is enabled) — body: `CreateVnPayPaymentUrlInputDto` (`BookingId`, `Amount`, `OrderInfo`, optional `Locale`, optional `BankCode` such as `VNPAYQR` / `VNBANK` / `INTCARD`).
+- `POST .../customer/payment/create-payment-url` (authenticated customer route; `X-Tenant` when multi-tenancy is enabled) — body: `CreateVnPayPaymentUrlInputDto` (`BookingId`, `Amount`, `OrderInfo`, optional `Locale`, optional `BankCode` such as `VNPAYQR` / `VNBANK` / `INTCARD`).
+- `POST .../{role}/payment/create-payment-url` role-scoped variants are available for `admin`, `manager`, `staff`; the old `.../api/payment/create-payment-url` endpoint remains temporarily for compatibility.
 - `GET .../vnpay-ipn` (anonymous) — VNPAY IPN; always returns **HTTP 200** with JSON `RspCode` / `Message`.
 - `GET .../vnpay-return` (anonymous) — browser return; **no database payment updates**; redirects to `VnPay:FrontendSuccessUrl` or `VnPay:FrontendFailureUrl`, with `bookingId` appended when known.
 
