@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
-using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
 using LTC.PaymentService.Dtos.Input;
@@ -126,7 +124,7 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         var locale = string.IsNullOrWhiteSpace(input.Locale) ? "vn" : input.Locale!;
         var orderInfo = TruncateOrderInfo(input.OrderInfo);
 
-        var requestData = new SortedDictionary<string, string>(StringComparer.Ordinal)
+        var requestData = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["vnp_Version"] = "2.1.0",
             ["vnp_Command"] = "pay",
@@ -139,17 +137,17 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             ["vnp_Locale"] = locale,
             ["vnp_ReturnUrl"] = returnFullUrl,
             ["vnp_IpAddr"] = string.IsNullOrWhiteSpace(clientIpAddress) ? "127.0.0.1" : clientIpAddress,
-            ["vnp_CreateDate"] = now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture),
-            ["vnp_IpnUrl"] = ipnFullUrl
+            ["vnp_CreateDate"] = now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)
         };
 
-        var secureHash = VnPayLibrary.Sign(requestData, _options.HashSecret);
-        requestData["vnp_SecureHash"] = secureHash;
+        if (_options.IncludeIpnUrlInPaymentRequest)
+            requestData["vnp_IpnUrl"] = ipnFullUrl;
 
-        var query = string.Join("&",
-            requestData.Select(kv => $"{kv.Key}={WebUtility.UrlEncode(kv.Value)}"));
+        var bankCode = input.BankCode?.Trim();
+        if (!string.IsNullOrEmpty(bankCode))
+            requestData["vnp_BankCode"] = bankCode;
 
-        var paymentUrl = $"{_options.PaymentUrl.TrimEnd('/')}?{query}";
+        var paymentUrl = VnPayLibrary.BuildPaymentRedirectUrl(_options.PaymentUrl, requestData, _options.HashSecret);
 
         return new CreateVnPayPaymentUrlOutputDto { PaymentUrl = paymentUrl };
     }
@@ -157,6 +155,9 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
     public async Task<VnPayIpnResponseDto> ProcessIpnAsync(IReadOnlyDictionary<string, string> queryParameters)
     {
         var query = NormalizeQuery(queryParameters);
+
+        if (!VnPayLibrary.HasAnyVnpParameter(query))
+            return Rsp("99", "Input data required");
 
         if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
             return Rsp("97", "Invalid Signature");
@@ -230,18 +231,56 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         }
     }
 
-    public Task<string> ProcessReturnAsync(IReadOnlyDictionary<string, string> queryParameters)
+    public async Task<string> ProcessReturnAsync(IReadOnlyDictionary<string, string> queryParameters)
     {
         var query = NormalizeQuery(queryParameters);
 
         if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
-            return Task.FromResult(_options.FrontendFailureUrl);
+            return _options.FrontendFailureUrl;
 
         var responseCode = query.GetValueOrDefault("vnp_ResponseCode");
         var transactionStatus = query.GetValueOrDefault("vnp_TransactionStatus");
         var success = responseCode == "00" && transactionStatus == "00";
 
-        return Task.FromResult(success ? _options.FrontendSuccessUrl : _options.FrontendFailureUrl);
+        var baseUrl = success ? _options.FrontendSuccessUrl : _options.FrontendFailureUrl;
+
+        if (!Guid.TryParse(query.GetValueOrDefault("vnp_TxnRef"), out var paymentRequestId))
+            return baseUrl;
+
+        var bookingId = await TryResolveBookingIdAsync(paymentRequestId);
+        return AppendBookingIdQuery(baseUrl, bookingId);
+    }
+
+    private async Task<Guid?> TryResolveBookingIdAsync(Guid paymentRequestId)
+    {
+        IDisposable? tenantScope = null;
+        try
+        {
+            if (MultiTenancyConsts.IsEnabled)
+            {
+                var routing = await _vnpayTxnRoutingRepository.FindAsync(paymentRequestId);
+                if (routing == null)
+                    return null;
+
+                tenantScope = _currentTenant.Change(routing.TenantId, routing.TenantName);
+            }
+
+            var paymentRequest = await _paymentRequestRepository.FirstOrDefaultAsync(x => x.Id == paymentRequestId);
+            return paymentRequest?.BookingId;
+        }
+        finally
+        {
+            tenantScope?.Dispose();
+        }
+    }
+
+    private static string AppendBookingIdQuery(string url, Guid? bookingId)
+    {
+        if (!bookingId.HasValue || string.IsNullOrWhiteSpace(url))
+            return url;
+
+        var sep = url.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return $"{url}{sep}bookingId={bookingId.Value:D}";
     }
 
     private async Task InsertAuditAsync(Guid? tenantId, Guid paymentRequestId, string payloadJson)

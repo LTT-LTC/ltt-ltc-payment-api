@@ -49,4 +49,9 @@ public class VnPayOptions
     /// Optional payment request expiry from creation time (GMT+7).
     /// </summary>
     public int OrderExpireMinutes { get; set; } = 15;
+
+    /// <summary>
+    /// When true, includes <c>vnp_IpnUrl</c> on the pay URL. Official WebForms demo often omits it and registers IPN only in the merchant portal; set to true if your VNPAY integration requires the param.
+    /// </summary>
+    public bool IncludeIpnUrlInPaymentRequest { get; set; }
 }

@@ -20,9 +20,18 @@ Behind a gateway, publish the same paths under your public host (for example `ht
 
 **HTTP API surface (this service):**
 
-- `POST /ltc/payment-service/api/payment/create-payment-url` (authenticated) — body: `CreateVnPayPaymentUrlInputDto` (`BookingId`, `Amount`, `OrderInfo`, optional `Locale`).
-- `GET /ltc/payment-service/api/payment/vnpay-ipn` (anonymous) — VNPAY IPN; always returns **HTTP 200** with JSON `RspCode` / `Message`.
-- `GET /ltc/payment-service/api/payment/vnpay-return` (anonymous) — browser return; **no database payment updates**; redirects to `VnPay:FrontendSuccessUrl` or `VnPay:FrontendFailureUrl`.
+The same actions are registered under both prefixes so callers can use either gateway mapping:
+
+- `/ltc/payment-service/api/payment/...`
+- `/payment-service/api/payment/...`
+
+Customer web app calls typically use `NEXT_PUBLIC_API_URL` plus `/payment-service/api/payment/...` (same pattern as admin booking calls under `/payment-service`). If your gateway only exposes the `/ltc/...` prefix, use that path instead.
+
+- `POST .../create-payment-url` (authenticated, `X-Tenant` when multi-tenancy is enabled) — body: `CreateVnPayPaymentUrlInputDto` (`BookingId`, `Amount`, `OrderInfo`, optional `Locale`, optional `BankCode` such as `VNPAYQR` / `VNBANK` / `INTCARD`).
+- `GET .../vnpay-ipn` (anonymous) — VNPAY IPN; always returns **HTTP 200** with JSON `RspCode` / `Message`.
+- `GET .../vnpay-return` (anonymous) — browser return; **no database payment updates**; redirects to `VnPay:FrontendSuccessUrl` or `VnPay:FrontendFailureUrl`, with `bookingId` appended when known.
+
+Set `VnPay:IncludeIpnUrlInPaymentRequest` to `true` only if you need `vnp_IpnUrl` on the pay URL; the official WebForms demo often omits it and registers the IPN URL in the VNPAY merchant portal only.
 
 ## Multi-tenant IPN and `dbo.VnpayTxnRoutings`
 

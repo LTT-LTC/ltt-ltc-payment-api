@@ -20,4 +20,9 @@ public class CreateVnPayPaymentUrlInputDto
     /// Optional locale: vn or en (default vn).
     /// </summary>
     public string? Locale { get; set; }
+
+    /// <summary>
+    /// Optional VNPAY channel, e.g. VNPAYQR, VNBANK, INTCARD (same as official demo).
+    /// </summary>
+    public string? BankCode { get; set; }
 }

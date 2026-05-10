@@ -15,6 +15,7 @@ namespace LTC.PaymentService.Controllers;
 [RemoteService(Name = PaymentServiceRemoteServiceConsts.RemoteServiceName)]
 [Area(PaymentServiceRemoteServiceConsts.ModuleName)]
 [Route("/ltc/payment-service/api/payment")]
+[Route("/payment-service/api/payment")]
 public class VnPayController : AbpControllerBase
 {
     private readonly IVnPayAppService _vnPayAppService;

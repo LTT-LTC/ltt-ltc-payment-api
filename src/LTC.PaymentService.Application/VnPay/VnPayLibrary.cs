@@ -9,7 +9,8 @@ using System.Text;
 namespace LTC.PaymentService.VnPay;
 
 /// <summary>
-/// VNPAY v2 signing: sorted vnp_* keys, URL-encoded values, HMAC-SHA512 hex (lowercase).
+/// VNPAY v2 signing aligned with official samples: sorted <c>vnp_*</c> keys (ordinal),
+/// HMAC-SHA512 sign payload uses <c>UrlEncode(key)=UrlEncode(value)</c> pairs joined with <c>&amp;</c>, trailing <c>&amp;</c> stripped before hash.
 /// </summary>
 public static class VnPayLibrary
 {
@@ -20,12 +21,32 @@ public static class VnPayLibrary
     ];
 
     /// <summary>
-    /// Builds HMAC-SHA512 hex (lowercase) over the canonical sign string for the given parameters.
+    /// Builds the full payment redirect URL (sandbox/production vpcpay.html) including <c>vnp_SecureHash</c>.
     /// </summary>
-    public static string Sign(IDictionary<string, string> parameters, string hashSecret)
+    public static string BuildPaymentRedirectUrl(
+        string paymentUrl,
+        IDictionary<string, string> requestParametersWithoutHash,
+        string hashSecret)
     {
-        var signData = BuildSignData(parameters);
-        return HmacSha512Hex(hashSecret, signData);
+        ArgumentNullException.ThrowIfNull(requestParametersWithoutHash);
+
+        var signData = BuildSignData(requestParametersWithoutHash);
+        var secureHash = HmacSha512Hex(hashSecret, signData);
+
+        var sb = new StringBuilder();
+        foreach (var kv in OrderVnpParameters(requestParametersWithoutHash))
+        {
+            sb.Append(WebUtility.UrlEncode(kv.Key))
+                .Append('=')
+                .Append(WebUtility.UrlEncode(kv.Value))
+                .Append('&');
+        }
+
+        sb.Append(WebUtility.UrlEncode("vnp_SecureHash"))
+            .Append('=')
+            .Append(WebUtility.UrlEncode(secureHash));
+
+        return $"{paymentUrl.TrimEnd('/')}?{sb}";
     }
 
     /// <summary>
@@ -41,33 +62,44 @@ public static class VnPayLibrary
             return false;
 
         secureHashFromRequest = received;
-        var signData = BuildSignData(parameters.Where(kv => !HashExcludedKeys.Contains(kv.Key)));
+        var signData = BuildSignData(parameters);
         var computed = HmacSha512Hex(hashSecret, signData);
         return CryptographicOperations.FixedTimeEquals(
             Encoding.UTF8.GetBytes(computed.ToLowerInvariant()),
             Encoding.UTF8.GetBytes(received.Trim().ToLowerInvariant()));
     }
 
+    /// <summary>
+    /// Canonical sign string for both pay requests and IPN/return responses (matches VNPAY sample <c>GetResponseData</c> / pay query minus hash).
+    /// </summary>
     public static string BuildSignData(IEnumerable<KeyValuePair<string, string>> parameters)
     {
-        var filtered = parameters
+        var sb = new StringBuilder();
+        foreach (var kv in OrderVnpParameters(parameters))
+        {
+            if (HashExcludedKeys.Contains(kv.Key))
+                continue;
+
+            sb.Append(WebUtility.UrlEncode(kv.Key))
+                .Append('=')
+                .Append(WebUtility.UrlEncode(kv.Value))
+                .Append('&');
+        }
+
+        if (sb.Length > 0)
+            sb.Remove(sb.Length - 1, 1);
+
+        return sb.ToString();
+    }
+
+    private static IEnumerable<KeyValuePair<string, string>> OrderVnpParameters(
+        IEnumerable<KeyValuePair<string, string>> parameters)
+    {
+        return parameters
             .Where(kv => kv.Key.StartsWith("vnp_", StringComparison.Ordinal))
             .Where(kv => !HashExcludedKeys.Contains(kv.Key))
             .Where(kv => !string.IsNullOrEmpty(kv.Value))
             .OrderBy(kv => kv.Key, StringComparer.Ordinal);
-
-        var sb = new StringBuilder();
-        foreach (var kv in filtered)
-        {
-            if (sb.Length > 0)
-                sb.Append('&');
-
-            sb.Append(kv.Key)
-                .Append('=')
-                .Append(WebUtility.UrlEncode(kv.Value));
-        }
-
-        return sb.ToString();
     }
 
     private static string HmacSha512Hex(string hashSecret, string signData)
@@ -105,5 +137,19 @@ public static class VnPayLibrary
 
         major = minor / 100m;
         return true;
+    }
+
+    /// <summary>
+    /// True if the collection contains at least one <c>vnp_*</c> key (excluding empty key names).
+    /// </summary>
+    public static bool HasAnyVnpParameter(IReadOnlyDictionary<string, string> parameters)
+    {
+        foreach (var kv in parameters)
+        {
+            if (!string.IsNullOrEmpty(kv.Key) && kv.Key.StartsWith("vnp_", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 }
