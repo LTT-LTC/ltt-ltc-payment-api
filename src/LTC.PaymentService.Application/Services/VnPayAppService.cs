@@ -9,8 +9,10 @@ using LTC.PaymentService.Entities;
 using LTC.PaymentService.Interfaces;
 using LTC.PaymentService.MultiTenancy;
 using LTC.PaymentService.Options;
+using LTC.PaymentService.Services.Integration;
 using LTC.PaymentService.VnPay;
 using LTC.Shared.Hosting.Microservices.Timing;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Volo.Abp;
 using Volo.Abp.Application.Services;
@@ -33,6 +35,8 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
     private readonly IRepository<PaymentAuditLog, Guid> _paymentAuditLogRepository;
     private readonly IRepository<VnpayTxnRouting, Guid> _vnpayTxnRoutingRepository;
     private readonly ICurrentTenant _currentTenant;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly ICustomerBookingPaymentNotifier _customerBookingPaymentNotifier;
 
     public VnPayAppService(
         IOptions<VnPayOptions> options,
@@ -41,7 +45,9 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         IRepository<Payment, Guid> paymentRepository,
         IRepository<PaymentAuditLog, Guid> paymentAuditLogRepository,
         IRepository<VnpayTxnRouting, Guid> vnpayTxnRoutingRepository,
-        ICurrentTenant currentTenant)
+        ICurrentTenant currentTenant,
+        IHttpContextAccessor httpContextAccessor,
+        ICustomerBookingPaymentNotifier customerBookingPaymentNotifier)
     {
         _options = options.Value;
         _gmt7Clock = gmt7Clock;
@@ -50,13 +56,15 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         _paymentAuditLogRepository = paymentAuditLogRepository;
         _vnpayTxnRoutingRepository = vnpayTxnRoutingRepository;
         _currentTenant = currentTenant;
+        _httpContextAccessor = httpContextAccessor;
+        _customerBookingPaymentNotifier = customerBookingPaymentNotifier;
     }
 
     public async Task<CreateVnPayPaymentUrlOutputDto> CreatePaymentUrlAsync(
         CreateVnPayPaymentUrlInputDto input,
         string clientIpAddress)
     {
-        if (MultiTenancyConsts.IsEnabled && (!CurrentTenant.Id.HasValue || string.IsNullOrWhiteSpace(CurrentTenant.Name)))
+        if (MultiTenancyConsts.IsEnabled && !CurrentTenant.Id.HasValue)
             throw new UserFriendlyException("Tenant context is required for payment.");
 
         if (CurrentUser.Id == null)
@@ -117,7 +125,7 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             await _vnpayTxnRoutingRepository.InsertAsync(new VnpayTxnRouting(paymentRequest.Id)
             {
                 TenantId = CurrentTenant.Id!.Value,
-                TenantName = CurrentTenant.Name!
+                TenantName = ResolveTenantNameForVnpayRouting()
             }, autoSave: true);
         }
 
@@ -197,31 +205,10 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             if (payment.PaymentStatus == "SUCCESS")
                 return Rsp("02", "Order already confirmed");
 
-            var payloadJson = JsonSerializer.Serialize(query);
-            await InsertAuditAsync(paymentRequest.TenantId, paymentRequest.Id, payloadJson);
+            if (payment.PaymentStatus == "FAILED")
+                return Rsp("00", "Confirm success");
 
-            var responseCode = query.GetValueOrDefault("vnp_ResponseCode");
-            var transactionStatus = query.GetValueOrDefault("vnp_TransactionStatus");
-            var success = responseCode == "00" && transactionStatus == "00";
-
-            var txnNo = query.GetValueOrDefault("vnp_TransactionNo");
-
-            if (success)
-            {
-                payment.PaymentStatus = "SUCCESS";
-                payment.PaidTime = _gmt7Clock.Gmt7Now;
-                payment.GatewayTransactionId = txnNo;
-                payment.GatewayResponseCode = responseCode;
-                payment.GatewayRawResponse = payloadJson;
-            }
-            else
-            {
-                payment.PaymentStatus = "FAILED";
-                payment.GatewayResponseCode = responseCode;
-                payment.GatewayRawResponse = payloadJson;
-            }
-
-            await _paymentRepository.UpdateAsync(payment, autoSave: true);
+            await ApplyVnpGatewayCallbackAsync(paymentRequest, payment, query, auditEventType: "VnpayIpn");
 
             return Rsp("00", "Confirm success");
         }
@@ -237,6 +224,9 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
 
         if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
             return _options.FrontendFailureUrl;
+
+        // Same callback params as IPN: persist SUCCESS/FAILED when IPN never reaches this host (localhost, firewall).
+        await TryFinalizePaymentFromBrowserReturnAsync(query);
 
         var responseCode = query.GetValueOrDefault("vnp_ResponseCode");
         var transactionStatus = query.GetValueOrDefault("vnp_TransactionStatus");
@@ -283,13 +273,107 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         return $"{url}{sep}bookingId={bookingId.Value:D}";
     }
 
-    private async Task InsertAuditAsync(Guid? tenantId, Guid paymentRequestId, string payloadJson)
+    /// <summary>
+    /// Applies VNPAY result to an existing PENDING payment (success or failure). Idempotent if already SUCCESS.
+    /// </summary>
+    private async Task ApplyVnpGatewayCallbackAsync(
+        PaymentRequest paymentRequest,
+        Payment payment,
+        IReadOnlyDictionary<string, string> query,
+        string auditEventType)
+    {
+        if (payment.PaymentStatus != "PENDING")
+            return;
+
+        var payloadJson = JsonSerializer.Serialize(query);
+        await InsertAuditAsync(paymentRequest.TenantId, paymentRequest.Id, payloadJson, auditEventType);
+
+        var responseCode = query.GetValueOrDefault("vnp_ResponseCode");
+        var transactionStatus = query.GetValueOrDefault("vnp_TransactionStatus");
+        var success = responseCode == "00" && transactionStatus == "00";
+
+        var txnNo = query.GetValueOrDefault("vnp_TransactionNo");
+
+        if (success)
+        {
+            payment.PaymentStatus = "SUCCESS";
+            payment.PaidTime = _gmt7Clock.Gmt7Now;
+            payment.GatewayTransactionId = txnNo;
+            payment.GatewayResponseCode = responseCode;
+            payment.GatewayRawResponse = payloadJson;
+        }
+        else
+        {
+            payment.PaymentStatus = "FAILED";
+            payment.GatewayResponseCode = responseCode;
+            payment.GatewayRawResponse = payloadJson;
+        }
+
+        await _paymentRepository.UpdateAsync(payment, autoSave: true);
+
+        if (success && paymentRequest.BookingId != Guid.Empty)
+        {
+            await _customerBookingPaymentNotifier.NotifyBookingPaidAsync(
+                paymentRequest.BookingId,
+                paymentRequest.Amount,
+                paymentRequest.Currency ?? "VND",
+                txnNo,
+                paymentRequest.Id);
+        }
+    }
+
+    private async Task TryFinalizePaymentFromBrowserReturnAsync(Dictionary<string, string> query)
+    {
+        if (!VnPayLibrary.HasAnyVnpParameter(query))
+            return;
+
+        if (!query.TryGetValue("vnp_TxnRef", out var txnRef) || !Guid.TryParse(txnRef, out var paymentRequestId))
+            return;
+
+        if (!query.TryGetValue("vnp_Amount", out var vnpAmountStr))
+            return;
+
+        if (!VnPayLibrary.TryParseVnpAmountMajor(vnpAmountStr, out var vnpAmountMajor))
+            return;
+
+        IDisposable? tenantScope = null;
+        try
+        {
+            if (MultiTenancyConsts.IsEnabled)
+            {
+                var routing = await _vnpayTxnRoutingRepository.FindAsync(paymentRequestId);
+                if (routing == null)
+                    return;
+
+                tenantScope = _currentTenant.Change(routing.TenantId, routing.TenantName);
+            }
+
+            var paymentRequest = await _paymentRequestRepository.FirstOrDefaultAsync(x => x.Id == paymentRequestId);
+            if (paymentRequest == null)
+                return;
+
+            var payment = await _paymentRepository.FirstOrDefaultAsync(x => x.PaymentRequestId == paymentRequest.Id);
+            if (payment == null)
+                return;
+
+            if (vnpAmountMajor != paymentRequest.Amount)
+                return;
+
+            await ApplyVnpGatewayCallbackAsync(paymentRequest, payment, query, auditEventType: "VnpayReturn");
+        }
+        finally
+        {
+            tenantScope?.Dispose();
+        }
+    }
+
+    private async Task InsertAuditAsync(Guid? tenantId, Guid paymentRequestId, string payloadJson, string eventType)
     {
         await _paymentAuditLogRepository.InsertAsync(new PaymentAuditLog
         {
             TenantId = tenantId,
             PaymentRequestId = paymentRequestId,
-            EventType = "VnpayIpn",
+            EventType = eventType,
             Direction = "Inbound",
             Payload = payloadJson,
             CreatedAt = _gmt7Clock.Gmt7Now
@@ -309,6 +393,26 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         }
 
         return dict;
+    }
+
+    /// <summary>
+    /// VNPAY IPN resolves tenant via <see cref="VnpayTxnRouting"/>; <see cref="TenantName"/> must match SQL schema / ABP tenant name (not a raw GUID).
+    /// </summary>
+    private string ResolveTenantNameForVnpayRouting()
+    {
+        if (!string.IsNullOrWhiteSpace(CurrentTenant.Name))
+            return CurrentTenant.Name!;
+
+        var http = _httpContextAccessor.HttpContext;
+        if (http?.Request.Headers.TryGetValue("X-Tenant", out var header) == true)
+        {
+            var fromHeader = header.ToString().Trim();
+            if (!string.IsNullOrWhiteSpace(fromHeader))
+                return fromHeader;
+        }
+
+        throw new UserFriendlyException(
+            "Cannot resolve tenant for payment callbacks: include tenant name on the token or send the X-Tenant header (same value your DB schema uses, e.g. LTC).");
     }
 
     private static string CombineUrl(string baseUrl, string path)

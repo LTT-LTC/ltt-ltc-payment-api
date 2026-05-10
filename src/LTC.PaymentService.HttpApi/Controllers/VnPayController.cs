@@ -29,9 +29,16 @@ public class VnPayController : AbpControllerBase
     /// Creates a signed VNPAY payment URL (authenticated booking/customer flow).
     /// </summary>
     [HttpPost("create-payment-url")]
+    [Consumes("application/json")]
     [Authorize]
-    public async Task<IActionResult> CreatePaymentUrlAsync([FromBody] CreateVnPayPaymentUrlInputDto input)
+    public async Task<IActionResult> CreatePaymentUrlAsync([FromBody] CreateVnPayPaymentUrlInputDto? input)
     {
+        if (input is null)
+        {
+            throw new UserFriendlyException(
+                "Request body is required. Send JSON with bookingId (GUID), amount (VND, greater than 0), and orderInfo (string). Example: {\"bookingId\":\"...\",\"amount\":100000,\"orderInfo\":\"Tickets\"}");
+        }
+
         var ip = GetClientIp(HttpContext);
         return Ok(await _vnPayAppService.CreatePaymentUrlAsync(input, ip));
     }
@@ -58,7 +65,7 @@ public class VnPayController : AbpControllerBase
     }
 
     /// <summary>
-    /// Browser return URL: verifies signature and redirects to configured frontend URLs (no payment DB updates).
+    /// Browser return URL: verifies signature, updates payment row when still pending (same as IPN), then redirects.
     /// </summary>
     [HttpGet("vnpay-return")]
     [AllowAnonymous]
