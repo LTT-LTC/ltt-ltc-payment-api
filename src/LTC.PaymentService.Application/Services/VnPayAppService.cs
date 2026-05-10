@@ -96,8 +96,8 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             Currency = "VND",
             PaymentGateway = "VNPAY",
             GatewayOrderId = null,
-            ReturnUrl = returnFullUrl,
-            NotifyUrl = ipnFullUrl,
+            ReturnUrl = null,
+            NotifyUrl = null,
             CreatedAt = now,
             ExpiredAt = now.AddMinutes(Math.Max(1, _options.OrderExpireMinutes))
         };
