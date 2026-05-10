@@ -10,9 +10,11 @@ using System.Threading.Tasks;
 using LTC.PaymentService.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Volo.Abp.DependencyInjection;
+
 namespace LTC.PaymentService.Services.Integration;
 
-public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient
+public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITransientDependency
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptions<PaymentCustomerIntegrationOptions> _options;
@@ -78,20 +80,26 @@ public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient
                 return new Dictionary<Guid, BookingPaymentSummaryRow>();
             }
 
-            return list.ToDictionary(
-                x => x.BookingId,
-                x => new BookingPaymentSummaryRow
-                {
-                    ShowtimeId = x.ShowtimeId,
-                    BookingStatus = x.BookingStatus,
-                    SeatCodes = x.SeatCodes,
-                    TotalPrice = x.TotalPrice,
-                    PaidAmount = x.PaidAmount,
-                    DiscountAmount = x.DiscountAmount,
-                    CreatedAt = x.CreatedAt,
-                    ExpiredAt = x.ExpiredAt,
-                    SnapshotJson = x.SnapshotJson,
-                });
+            return list
+                .GroupBy(x => x.BookingId)
+                .ToDictionary(
+                    g => g.Key,
+                    g =>
+                    {
+                        var x = g.First();
+                        return new BookingPaymentSummaryRow
+                        {
+                            ShowtimeId = x.ShowtimeId,
+                            BookingStatus = x.BookingStatus,
+                            SeatCodes = x.SeatCodes,
+                            TotalPrice = x.TotalPrice,
+                            PaidAmount = x.PaidAmount,
+                            DiscountAmount = x.DiscountAmount,
+                            CreatedAt = x.CreatedAt,
+                            ExpiredAt = x.ExpiredAt,
+                            SnapshotJson = x.SnapshotJson,
+                        };
+                    });
         }
         catch (Exception ex)
         {
