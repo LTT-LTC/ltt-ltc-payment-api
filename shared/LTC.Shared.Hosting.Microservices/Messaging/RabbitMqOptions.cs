@@ -32,10 +32,15 @@ public class RabbitMqRoutingKeys
     public string BookingRequestedDlq { get; set; } = "ltc.booking.requested.dlq";
 
     public string SeatHoldEvents { get; set; } = "ltc.seat.holds";
+
+    public string ShowtimeSeatMergeRequested { get; set; } = "ltc.showtime.seat.merge.requested";
 }
 
 public class RabbitMqConsumerOptions
 {
     /// <summary>Queue for payment service to consume booking requests (bound to <see cref="RabbitMqRoutingKeys.BookingRequested"/>).</summary>
     public string BookingRequestedQueue { get; set; } = "ltc.payment.booking.requested";
+
+    /// <summary>Queue for administration service to merge paid seats into showtime layout JSON.</summary>
+    public string ShowtimeSeatMergeRequestedQueue { get; set; } = "ltc.administration.showtime.seat.merge";
 }
