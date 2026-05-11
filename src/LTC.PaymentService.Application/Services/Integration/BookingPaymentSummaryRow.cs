@@ -14,4 +14,10 @@ public sealed class BookingPaymentSummaryRow
     public DateTime? CreatedAt { get; set; }
     public DateTime? ExpiredAt { get; set; }
     public string? SnapshotJson { get; set; }
+
+    /// <summary>Movie name for the showtime associated with this booking.</summary>
+    public string? MovieName { get; set; }
+
+    /// <summary>Cinema name for the showtime associated with this booking.</summary>
+    public string? CinemaName { get; set; }
 }

@@ -380,6 +380,8 @@ public class PaymentAppService : ApplicationService, IPaymentAppService
             dto.BookingCreatedAt = b.CreatedAt;
             dto.BookingExpiredAt = b.ExpiredAt;
             dto.BookingSnapshotJson = b.SnapshotJson;
+            dto.MovieName = b.MovieName;
+            dto.CinemaName = b.CinemaName;
         }
     }
 
