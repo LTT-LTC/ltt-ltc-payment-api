@@ -82,18 +82,13 @@ public class BookingRequestedConsumer : BackgroundService
                 autoDelete: false,
                 arguments: null);
 
-            // Main queue — wired to DLX so messages that exhaust retries route to DLQ automatically
-            var mainQueueArgs = new Dictionary<string, object>
-            {
-                ["x-dead-letter-exchange"] = _options.Exchange,
-                ["x-dead-letter-routing-key"] = _options.RoutingKeys.BookingRequestedDlq,
-            };
-            channel.QueueDeclare(
+            // Main queue — attempt to declare with DLX args for new queues.
+            // Falls back to plain declare if queue already exists without DLX args.
+            DeclareQueueWithDlxFallback(
+                connection,
                 queue: _options.Consumer.BookingRequestedQueue,
-                durable: true,
-                exclusive: false,
-                autoDelete: false,
-                arguments: mainQueueArgs);
+                exchange: _options.Exchange,
+                dlxRoutingKey: _options.RoutingKeys.BookingRequestedDlq);
             channel.QueueBind(
                 queue: _options.Consumer.BookingRequestedQueue,
                 exchange: _options.Exchange,
@@ -225,6 +220,46 @@ public class BookingRequestedConsumer : BackgroundService
                 // shutdown
             }
         }
+    }
+
+    private void DeclareQueueWithDlxFallback(
+        global::RabbitMQ.Client.IConnection connection,
+        string queue,
+        string exchange,
+        string dlxRoutingKey)
+    {
+        try
+        {
+            using var ch = connection.CreateModel();
+            ch.QueueDeclare(
+                queue: queue,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                arguments: new Dictionary<string, object>
+                {
+                    ["x-dead-letter-exchange"] = exchange,
+                    ["x-dead-letter-routing-key"] = dlxRoutingKey,
+                });
+            return;
+        }
+        catch (global::RabbitMQ.Client.Exceptions.OperationInterruptedException ex)
+            when (ex.ShutdownReason?.ReplyCode == 406)
+        {
+            _logger.LogWarning(
+                "Queue '{Queue}' already exists without DLX arguments. " +
+                "DLQ routing will not be active until the queue is deleted and recreated. " +
+                "Continuing with existing queue.",
+                queue);
+        }
+
+        using var fallbackCh = connection.CreateModel();
+        fallbackCh.QueueDeclare(
+            queue: queue,
+            durable: true,
+            exclusive: false,
+            autoDelete: false,
+            arguments: null);
     }
 
     private void RepublishToMainQueue(string messageJson, string messageId, int retryCount)
