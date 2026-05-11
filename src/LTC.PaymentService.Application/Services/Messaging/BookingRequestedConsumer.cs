@@ -1,26 +1,39 @@
 using System;
-using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Hangfire;
 using LTC.Shared.Hosting.Microservices.Messaging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
+
 namespace LTC.PaymentService.Services.Messaging;
 
 public class BookingRequestedConsumer : BackgroundService
 {
+    private const int MaxRetryCount = 3;
+    private const int RetryDelaySeconds = 30;
+    private const string DedupKeyPrefix = "dedup:booking-requested:";
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
-    private readonly ConcurrentDictionary<Guid, byte> _processedBookingIds = new();
 
     private readonly RabbitMqOptions _options;
+    private readonly IConnectionMultiplexer _redis;
+    private readonly IBackgroundJobClient _jobClient;
     private readonly ILogger<BookingRequestedConsumer> _logger;
 
-    public BookingRequestedConsumer(IOptions<RabbitMqOptions> options, ILogger<BookingRequestedConsumer> logger)
+    public BookingRequestedConsumer(
+        IOptions<RabbitMqOptions> options,
+        IConnectionMultiplexer redis,
+        IBackgroundJobClient jobClient,
+        ILogger<BookingRequestedConsumer> logger)
     {
         _options = options.Value;
+        _redis = redis;
+        _jobClient = jobClient;
         _logger = logger;
     }
 
@@ -72,25 +85,49 @@ public class BookingRequestedConsumer : BackgroundService
                 durable: true,
                 autoDelete: false,
                 arguments: null);
+
+            // Main queue — wired to DLX so messages that exhaust retries route to DLQ automatically
+            var mainQueueArgs = new Dictionary<string, object>
+            {
+                ["x-dead-letter-exchange"] = _options.Exchange,
+                ["x-dead-letter-routing-key"] = _options.RoutingKeys.BookingRequestedDlq,
+            };
             channel.QueueDeclare(
                 queue: _options.Consumer.BookingRequestedQueue,
                 durable: true,
                 exclusive: false,
                 autoDelete: false,
-                arguments: null);
+                arguments: mainQueueArgs);
             channel.QueueBind(
                 queue: _options.Consumer.BookingRequestedQueue,
                 exchange: _options.Exchange,
                 routingKey: _options.RoutingKeys.BookingRequested,
                 arguments: null);
+
+            // DLQ — terminal; no further routing
+            channel.QueueDeclare(
+                queue: _options.Consumer.BookingRequestedDlqQueue,
+                durable: true,
+                exclusive: false,
+                autoDelete: false,
+                arguments: null);
+            channel.QueueBind(
+                queue: _options.Consumer.BookingRequestedDlqQueue,
+                exchange: _options.Exchange,
+                routingKey: _options.RoutingKeys.BookingRequestedDlq,
+                arguments: null);
+
             channel.BasicQos(0, 1, false);
 
             var consumer = new global::RabbitMQ.Client.Events.AsyncEventingBasicConsumer(channel);
             consumer.Received += async (_, ea) =>
             {
+                var json = Encoding.UTF8.GetString(ea.Body.ToArray());
+                var messageId = ea.BasicProperties?.MessageId ?? Guid.NewGuid().ToString("N");
+                var retryCount = GetRetryCount(ea.BasicProperties);
+
                 try
                 {
-                    var json = Encoding.UTF8.GetString(ea.Body.ToArray());
                     var payload = JsonSerializer.Deserialize<BookingRequestedEvent>(json, JsonSerializerOptions);
                     if (payload is null)
                     {
@@ -99,9 +136,14 @@ public class BookingRequestedConsumer : BackgroundService
                         return;
                     }
 
-                    if (!_processedBookingIds.TryAdd(payload.BookingId, 1))
+                    // Redis-based distributed deduplication (TTL 24h, safe across multiple instances)
+                    var db = _redis.GetDatabase();
+                    var dedupKey = $"{DedupKeyPrefix}{payload.BookingId}";
+                    var isNew = await db.StringSetAsync(dedupKey, "1", TimeSpan.FromHours(24), When.NotExists);
+                    if (!isNew)
                     {
-                        _logger.LogInformation("Skip duplicate BookingRequested for booking {BookingId}", payload.BookingId);
+                        _logger.LogInformation(
+                            "Skip duplicate BookingRequested for booking {BookingId}", payload.BookingId);
                         channel.BasicAck(ea.DeliveryTag, false);
                         return;
                     }
@@ -118,14 +160,38 @@ public class BookingRequestedConsumer : BackgroundService
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "RabbitMQ consume failure for BookingRequested queue.");
-                    try
+                    _logger.LogError(
+                        ex,
+                        "RabbitMQ consume failure for BookingRequested. MessageId={MessageId} RetryCount={RetryCount}",
+                        messageId,
+                        retryCount);
+
+                    if (retryCount < MaxRetryCount)
                     {
-                        channel.BasicNack(ea.DeliveryTag, false, requeue: true);
+                        // Schedule Hangfire re-publish with incremented counter after delay
+                        _jobClient.Schedule<BookingRequestedDlqRetryJob>(
+                            job => job.ExecuteAsync(json, messageId, retryCount + 1),
+                            TimeSpan.FromSeconds(RetryDelaySeconds));
+                        _logger.LogWarning(
+                            "Scheduled retry {NextRetry}/{Max} for MessageId={MessageId} in {Delay}s",
+                            retryCount + 1, MaxRetryCount, messageId, RetryDelaySeconds);
+                        // Ack the original so it's removed; the retry job re-publishes it
+                        try { channel.BasicAck(ea.DeliveryTag, false); } catch { /* channel may be closing */ }
                     }
-                    catch (Exception nackEx)
+                    else
                     {
-                        _logger.LogError(nackEx, "Failed to nack message.");
+                        // Exhausted retries — nack without requeue; DLX routes to DLQ
+                        _logger.LogError(
+                            "BookingRequested MessageId={MessageId} exhausted {Max} retries; routing to DLQ",
+                            messageId, MaxRetryCount);
+                        try
+                        {
+                            channel.BasicNack(ea.DeliveryTag, false, requeue: false);
+                        }
+                        catch (Exception nackEx)
+                        {
+                            _logger.LogError(nackEx, "Failed to nack message.");
+                        }
                     }
                 }
             };
@@ -148,5 +214,18 @@ public class BookingRequestedConsumer : BackgroundService
                 // shutdown
             }
         }
+    }
+
+    private static int GetRetryCount(global::RabbitMQ.Client.IBasicProperties? props)
+    {
+        if (props?.Headers == null) return 0;
+        if (!props.Headers.TryGetValue("x-retry-count", out var raw)) return 0;
+        return raw switch
+        {
+            int i => i,
+            long l => (int)l,
+            byte[] b => b.Length > 0 ? b[0] : 0,
+            _ => 0
+        };
     }
 }

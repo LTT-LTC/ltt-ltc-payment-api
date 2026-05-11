@@ -107,14 +107,35 @@ namespace LTC.Shared.Hosting.Microservices.Authentication
                         
                         // Map 'admin' to 'Admin' for case-sensitive ASP.NET identity checks, if needed,
                         // and ensure AbpClaimTypes are also populated if ABP is looking there.
+                        // Also map simple "role" claims to the full namespace RoleClaimType for proper authorization.
                         if (ctx.Principal?.Identity is ClaimsIdentity identity)
                         {
+                            // Get existing role claims with the expected RoleClaimType
                             var roleClaims = claims.Where(c => c.Type == identity.RoleClaimType).ToList();
+                            
+                            // Also find role claims with simple "role" type that need to be mapped
+                            var simpleRoleClaims = claims.Where(c => 
+                                c.Type.Equals("role", StringComparison.OrdinalIgnoreCase) || 
+                                c.Type == ClaimTypes.Role).ToList();
+                            
+                            // Map simple role claims to the expected RoleClaimType
+                            foreach (var r in simpleRoleClaims)
+                            {
+                                if (!roleClaims.Any(rc => rc.Value.Equals(r.Value, StringComparison.OrdinalIgnoreCase)))
+                                {
+                                    identity.AddClaim(new Claim(identity.RoleClaimType, r.Value));
+                                    Log.Information("[JWT DEBUG] Mapped role claim '{RoleValue}' from simple type to {RoleClaimType}", 
+                                        r.Value, identity.RoleClaimType);
+                                }
+                            }
+                            
+                            // Handle case normalization for 'admin' -> 'Admin'
                             foreach (var r in roleClaims)
                             {
                                 if (r.Value == "admin")
                                 {
                                     identity.AddClaim(new Claim(identity.RoleClaimType, "Admin"));
+                                    Log.Information("[JWT DEBUG] Normalized 'admin' to 'Admin'");
                                 }
                             }
                         }
@@ -123,8 +144,11 @@ namespace LTC.Shared.Hosting.Microservices.Authentication
                         bool isAdmin = ctx.Principal?.IsInRole("Admin") ?? false;
                         bool hasAdminRoleClaim = claims.Any(c => c.Value.Equals("Admin", StringComparison.OrdinalIgnoreCase) && 
                             (c.Type == "role" || c.Type == ClaimTypes.Role || c.Type.EndsWith("/role")));
+                        bool hasManagerRoleClaim = claims.Any(c => c.Value.Equals("Manager", StringComparison.OrdinalIgnoreCase) && 
+                            (c.Type == "role" || c.Type == ClaimTypes.Role || c.Type.EndsWith("/role")));
                         
                         Log.Information("[JWT DEBUG] Authorization Check - IsInRole('Admin'): {IsAdmin}, HasAdminRoleClaim: {HasAdminRoleClaim}", isAdmin, hasAdminRoleClaim);
+                        Log.Information("[JWT DEBUG] Authorization Check - HasManagerRoleClaim: {HasManagerRoleClaim}", hasManagerRoleClaim);
                         
                         return Task.CompletedTask;
                     },
