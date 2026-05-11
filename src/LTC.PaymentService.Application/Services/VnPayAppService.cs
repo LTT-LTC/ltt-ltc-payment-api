@@ -259,7 +259,7 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             if (bookingId.HasValue && !string.IsNullOrWhiteSpace(returnContext.FrontendOrigin))
             {
                 var targetPath = success
-                    ? $"/booking/{bookingId.Value:D}/processing?vnpay=1&status=success"
+                    ? $"/booking/{bookingId.Value:D}/payment?vnpay=1&status=success"
                     : $"/booking/{bookingId.Value:D}/payment?vnpay=1&status=failed";
                 return CombineUrl(returnContext.FrontendOrigin, targetPath);
             }
