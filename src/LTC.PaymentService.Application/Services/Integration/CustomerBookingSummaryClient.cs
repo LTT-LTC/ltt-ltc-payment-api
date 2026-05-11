@@ -98,6 +98,8 @@ public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITran
                             CreatedAt = x.CreatedAt,
                             ExpiredAt = x.ExpiredAt,
                             SnapshotJson = x.SnapshotJson,
+                            MovieName = x.MovieName,
+                            CinemaName = x.CinemaName,
                         };
                     });
         }
@@ -126,6 +128,8 @@ public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITran
         public DateTime? CreatedAt { get; set; }
         public DateTime? ExpiredAt { get; set; }
         public string? SnapshotJson { get; set; }
+        public string? MovieName { get; set; }
+        public string? CinemaName { get; set; }
     }
 
     private static class JsonSerializerOptionsCache

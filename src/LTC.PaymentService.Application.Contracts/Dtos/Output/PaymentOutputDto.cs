@@ -33,4 +33,10 @@ public class PaymentOutputDto : EntityDto<Guid>
     public DateTime? BookingCreatedAt { get; set; }
     public DateTime? BookingExpiredAt { get; set; }
     public string? BookingSnapshotJson { get; set; }
+
+    /// <summary>Movie name for the showtime associated with this booking.</summary>
+    public string? MovieName { get; set; }
+
+    /// <summary>Cinema name for the showtime associated with this booking.</summary>
+    public string? CinemaName { get; set; }
 }
