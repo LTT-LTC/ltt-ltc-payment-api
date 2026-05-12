@@ -174,6 +174,8 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
 
     public async Task<VnPayIpnResponseDto> ProcessIpnAsync(IReadOnlyDictionary<string, string> queryParameters)
     {
+        Guid paymentRequestId = Guid.Empty;
+
         try
         {
             var query = NormalizeQuery(queryParameters);
@@ -190,7 +192,7 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
                 return Rsp("97", "Invalid Signature");
             }
 
-            if (!query.TryGetValue("vnp_TxnRef", out var txnRef) || !Guid.TryParse(txnRef, out var paymentRequestId))
+            if (!query.TryGetValue("vnp_TxnRef", out var txnRef) || !Guid.TryParse(txnRef, out paymentRequestId))
             {
                 _logger.LogWarning("VNPay IPN: Invalid or missing vnp_TxnRef");
                 return Rsp("01", "Order not found");
