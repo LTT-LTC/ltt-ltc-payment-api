@@ -351,7 +351,8 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
                 paymentRequest.Amount,
                 paymentRequest.Currency ?? "VND",
                 txnNo,
-                paymentRequest.Id);
+                paymentRequest.Id,
+                paymentRequest.TenantId);
         }
     }
 

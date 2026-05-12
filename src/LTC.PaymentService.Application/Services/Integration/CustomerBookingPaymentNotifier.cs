@@ -16,7 +16,8 @@ public interface ICustomerBookingPaymentNotifier : ITransientDependency
         decimal paidAmount,
         string currency,
         string? gatewayTransactionId,
-        Guid paymentRequestId);
+        Guid paymentRequestId,
+        Guid? tenantId = null);
 }
 
 public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
@@ -40,7 +41,8 @@ public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
         decimal paidAmount,
         string currency,
         string? gatewayTransactionId,
-        Guid paymentRequestId)
+        Guid paymentRequestId,
+        Guid? tenantId = null)
     {
         if (string.IsNullOrWhiteSpace(_options.CustomerServiceBaseUrl) ||
             string.IsNullOrWhiteSpace(_options.CustomerServiceInternalApiKey))
@@ -57,6 +59,10 @@ public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
             var client = _httpClientFactory.CreateClient(nameof(CustomerBookingPaymentNotifier));
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.TryAddWithoutValidation("X-Internal-Api-Key", _options.CustomerServiceInternalApiKey);
+            if (tenantId.HasValue)
+            {
+                request.Headers.TryAddWithoutValidation("__tenant", tenantId.Value.ToString());
+            }
             request.Content = JsonContent.Create(new
             {
                 bookingId,
