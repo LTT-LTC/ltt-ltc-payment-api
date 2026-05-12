@@ -47,12 +47,14 @@ public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
         if (string.IsNullOrWhiteSpace(_options.CustomerServiceBaseUrl) ||
             string.IsNullOrWhiteSpace(_options.CustomerServiceInternalApiKey))
         {
-            _logger.LogDebug("Customer booking notify skipped (Integration:CustomerServiceBaseUrl or ApiKey not set).");
+            _logger.LogWarning("Customer booking notify skipped (Integration:CustomerServiceBaseUrl or ApiKey not set).");
             return;
         }
 
         var baseUrl = _options.CustomerServiceBaseUrl.TrimEnd('/');
         var url = $"{baseUrl}/ltc/customer-service/internal/booking/payment-completed";
+
+        _logger.LogInformation("Notifying customer service of payment completion for booking {BookingId}, amount {Amount}", bookingId, paidAmount);
 
         try
         {
@@ -76,15 +78,20 @@ public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync();
-                _logger.LogWarning(
-                    "Customer booking notify failed: {Status} {Body}",
+                _logger.LogError(
+                    "Customer booking notify failed for booking {BookingId}: {Status} {Body}",
+                    bookingId,
                     (int)response.StatusCode,
                     body);
+            }
+            else
+            {
+                _logger.LogInformation("Customer booking notify succeeded for booking {BookingId}", bookingId);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Customer booking notify threw for booking {BookingId}", bookingId);
+            _logger.LogError(ex, "Customer booking notify threw for booking {BookingId}", bookingId);
         }
     }
 }
