@@ -33,25 +33,28 @@ jobs:
         with:
           authkey: ${{ secrets.TS_AUTHKEY }}
 
+      # Setup SSH - Connect to Swarm Manager (Server 1)
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H 100.109.240.84 >> ~/.ssh/known_hosts
+          ssh-keyscan -H 100.99.158.16 >> ~/.ssh/known_hosts
           chmod 644 ~/.ssh/known_hosts
 
       - name: Test SSH (optional but recommended)
         run: |
-          ssh -o StrictHostKeyChecking=no dranov@100.109.240.84 "echo SSH OK"
+          ssh -o StrictHostKeyChecking=no kaka-server@100.99.158.16 "echo SSH OK"
 
-      - name: SSH Deploy
+      # Deploy to Docker Swarm
+      - name: SSH Deploy to Swarm
         run: |
-          ssh -o StrictHostKeyChecking=no dranov@100.109.240.84 << 'EOF'
-            cd /home/dranov/Desktop/ltt-ltc
-
-            docker compose pull ltt-ltc-payment-api
-            docker compose up -d --no-deps ltt-ltc-payment-api
+          ssh -o StrictHostKeyChecking=no kaka-server@100.99.158.16 << EOF
+            set -e
+            echo "Updating $SERVICE_NAME service in Docker Swarm..."
+            docker service update --image $IMAGE_NAME:latest --force ltt-ltc-db_$SERVICE_NAME
+            echo "Deployment complete!"
+            docker service ps ltt-ltc-db_$SERVICE_NAME
           EOF
 
 
