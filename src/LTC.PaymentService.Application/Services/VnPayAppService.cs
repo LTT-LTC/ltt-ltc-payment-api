@@ -13,6 +13,7 @@ using LTC.PaymentService.Services.Integration;
 using LTC.PaymentService.VnPay;
 using LTC.Shared.Hosting.Microservices.Timing;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Volo.Abp;
 using Volo.Abp.Application.Services;
@@ -37,6 +38,7 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
     private readonly ICurrentTenant _currentTenant;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly ICustomerBookingPaymentNotifier _customerBookingPaymentNotifier;
+    private readonly ILogger<VnPayAppService> _logger;
 
     public VnPayAppService(
         IOptions<VnPayOptions> options,
@@ -47,7 +49,8 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         IRepository<VnpayTxnRouting, Guid> vnpayTxnRoutingRepository,
         ICurrentTenant currentTenant,
         IHttpContextAccessor httpContextAccessor,
-        ICustomerBookingPaymentNotifier customerBookingPaymentNotifier)
+        ICustomerBookingPaymentNotifier customerBookingPaymentNotifier,
+        ILogger<VnPayAppService> logger)
     {
         _options = options.Value;
         _gmt7Clock = gmt7Clock;
@@ -58,6 +61,7 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         _currentTenant = currentTenant;
         _httpContextAccessor = httpContextAccessor;
         _customerBookingPaymentNotifier = customerBookingPaymentNotifier;
+        _logger = logger;
     }
 
     public async Task<CreateVnPayPaymentUrlOutputDto> CreatePaymentUrlAsync(
@@ -176,35 +180,35 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
 
             if (!VnPayLibrary.HasAnyVnpParameter(query))
             {
-                Logger.LogWarning("VNPay IPN: No VNP parameters found in request");
+                _logger.LogWarning("VNPay IPN: No VNP parameters found in request");
                 return Rsp("99", "Input data required");
             }
 
             if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
             {
-                Logger.LogWarning("VNPay IPN: Invalid signature");
+                _logger.LogWarning("VNPay IPN: Invalid signature");
                 return Rsp("97", "Invalid Signature");
             }
 
             if (!query.TryGetValue("vnp_TxnRef", out var txnRef) || !Guid.TryParse(txnRef, out var paymentRequestId))
             {
-                Logger.LogWarning("VNPay IPN: Invalid or missing vnp_TxnRef");
+                _logger.LogWarning("VNPay IPN: Invalid or missing vnp_TxnRef");
                 return Rsp("01", "Order not found");
             }
 
             if (!query.TryGetValue("vnp_Amount", out var vnpAmountStr))
             {
-                Logger.LogWarning("VNPay IPN: Missing vnp_Amount for payment request {PaymentRequestId}", paymentRequestId);
+                _logger.LogWarning("VNPay IPN: Missing vnp_Amount for payment request {PaymentRequestId}", paymentRequestId);
                 return Rsp("04", "Invalid amount");
             }
 
             if (!VnPayLibrary.TryParseVnpAmountMajor(vnpAmountStr, out var vnpAmountMajor))
             {
-                Logger.LogWarning("VNPay IPN: Invalid vnp_Amount format for payment request {PaymentRequestId}", paymentRequestId);
+                _logger.LogWarning("VNPay IPN: Invalid vnp_Amount format for payment request {PaymentRequestId}", paymentRequestId);
                 return Rsp("04", "Invalid amount");
             }
 
-            Logger.LogInformation("VNPay IPN: Received for payment request {PaymentRequestId} with amount {Amount}", paymentRequestId, vnpAmountMajor);
+            _logger.LogInformation("VNPay IPN: Received for payment request {PaymentRequestId} with amount {Amount}", paymentRequestId, vnpAmountMajor);
 
             IDisposable? tenantScope = null;
             try
@@ -221,38 +225,38 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
                 var paymentRequest = await _paymentRequestRepository.FirstOrDefaultAsync(x => x.Id == paymentRequestId);
                 if (paymentRequest == null)
                 {
-                    Logger.LogWarning("VNPay IPN: Payment request {PaymentRequestId} not found", paymentRequestId);
+                    _logger.LogWarning("VNPay IPN: Payment request {PaymentRequestId} not found", paymentRequestId);
                     return Rsp("01", "Order not found");
                 }
 
                 var payment = await _paymentRepository.FirstOrDefaultAsync(x => x.PaymentRequestId == paymentRequest.Id);
                 if (payment == null)
                 {
-                    Logger.LogWarning("VNPay IPN: Payment not found for payment request {PaymentRequestId}", paymentRequestId);
+                    _logger.LogWarning("VNPay IPN: Payment not found for payment request {PaymentRequestId}", paymentRequestId);
                     return Rsp("01", "Order not found");
                 }
 
                 if (vnpAmountMajor != paymentRequest.Amount)
                 {
-                    Logger.LogWarning("VNPay IPN: Amount mismatch for payment request {PaymentRequestId}. Expected {Expected}, got {Actual}", paymentRequestId, paymentRequest.Amount, vnpAmountMajor);
+                    _logger.LogWarning("VNPay IPN: Amount mismatch for payment request {PaymentRequestId}. Expected {Expected}, got {Actual}", paymentRequestId, paymentRequest.Amount, vnpAmountMajor);
                     return Rsp("04", "Invalid amount");
                 }
 
                 if (payment.PaymentStatus == "SUCCESS")
                 {
-                    Logger.LogInformation("VNPay IPN: Payment {PaymentRequestId} already confirmed, skipping", paymentRequestId);
+                    _logger.LogInformation("VNPay IPN: Payment {PaymentRequestId} already confirmed, skipping", paymentRequestId);
                     return Rsp("02", "Order already confirmed");
                 }
 
                 if (payment.PaymentStatus == "FAILED")
                 {
-                    Logger.LogInformation("VNPay IPN: Payment {PaymentRequestId} was FAILED, confirming success", paymentRequestId);
+                    _logger.LogInformation("VNPay IPN: Payment {PaymentRequestId} was FAILED, confirming success", paymentRequestId);
                     return Rsp("00", "Confirm success");
                 }
 
-                Logger.LogInformation("VNPay IPN: Processing payment callback for payment request {PaymentRequestId}, booking {BookingId}", paymentRequestId, paymentRequest.BookingId);
+                _logger.LogInformation("VNPay IPN: Processing payment callback for payment request {PaymentRequestId}, booking {BookingId}", paymentRequestId, paymentRequest.BookingId);
                 await ApplyVnpGatewayCallbackAsync(paymentRequest, payment, query, auditEventType: "VnpayIpn");
-                Logger.LogInformation("VNPay IPN: Successfully processed payment callback for payment request {PaymentRequestId}", paymentRequestId);
+                _logger.LogInformation("VNPay IPN: Successfully processed payment callback for payment request {PaymentRequestId}", paymentRequestId);
 
                 return Rsp("00", "Confirm success");
             }
@@ -264,7 +268,7 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         catch (Exception ex)
         {
             // VNPAY expects 200 + JSON response body, not server 500.
-            Logger.LogError(ex, "VNPay IPN: Unhandled error processing payment request {PaymentRequestId}", paymentRequestId);
+            _logger.LogError(ex, "VNPay IPN: Unhandled error processing payment request {PaymentRequestId}", paymentRequestId);
             return Rsp("99", "Unknown error");
         }
     }
