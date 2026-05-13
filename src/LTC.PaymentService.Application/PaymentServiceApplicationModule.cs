@@ -1,4 +1,5 @@
 using System;
+using LTC.CustomerService.Grpc;
 using LTC.PaymentService.Options;
 using LTC.PaymentService.Services.Integration;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,8 +23,11 @@ public class PaymentServiceApplicationModule : AbpModule
         context.Services.Configure<InternalApiOptions>(context.Services.GetConfiguration().GetSection(InternalApiOptions.SectionName));
         context.Services.Configure<PaymentCustomerIntegrationOptions>(
             context.Services.GetConfiguration().GetSection(PaymentCustomerIntegrationOptions.SectionName));
-        context.Services.AddHttpClient(nameof(CustomerBookingPaymentNotifier))
-            .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
+        var customerServiceBaseUrl = context.Services.GetConfiguration()["Integration:CustomerServiceBaseUrl"] ?? "http://ltt-ltc-customer-api:8080";
+        context.Services.AddGrpcClient<BookingGrpc.BookingGrpcClient>(o =>
+        {
+            o.Address = new Uri(customerServiceBaseUrl);
+        });
         context.Services.AddHttpClient(nameof(CustomerBookingSummaryClient))
             .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
         context.Services.AddMapperlyObjectMapper<PaymentServiceApplicationModule>();
