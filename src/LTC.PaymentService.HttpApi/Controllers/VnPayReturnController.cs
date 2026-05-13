@@ -35,7 +35,10 @@ public class VnPayReturnController : AbpControllerBase
             .Split('&', StringSplitOptions.RemoveEmptyEntries)
             .Select(part => part.Split('=', 2))
             .Where(parts => parts.Length == 2)
-            .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(
+                parts => parts[0],
+                parts => Uri.UnescapeDataString(parts[1].Replace("+", " ")),
+                StringComparer.OrdinalIgnoreCase);
 
         var url = await _vnPayAppService.ProcessReturnAsync(dict);
         return Redirect(url);
