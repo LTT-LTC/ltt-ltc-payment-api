@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 using LTC.PaymentService.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -29,10 +30,12 @@ public class VnPayReturnController : AbpControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> VnpayReturnAsync()
     {
-        var dict = Request.Query.ToDictionary(
-            kv => kv.Key,
-            kv => kv.Value.FirstOrDefault() ?? string.Empty,
-            StringComparer.OrdinalIgnoreCase);
+        var rawQuery = Request.QueryString.Value?.TrimStart('?') ?? string.Empty;
+        var dict = rawQuery
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => part.Split('=', 2))
+            .Where(parts => parts.Length == 2)
+            .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.OrdinalIgnoreCase);
 
         var url = await _vnPayAppService.ProcessReturnAsync(dict);
         return Redirect(url);
