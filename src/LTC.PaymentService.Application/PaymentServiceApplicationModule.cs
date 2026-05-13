@@ -22,10 +22,6 @@ public class PaymentServiceApplicationModule : AbpModule
         context.Services.Configure<InternalApiOptions>(context.Services.GetConfiguration().GetSection(InternalApiOptions.SectionName));
         context.Services.Configure<PaymentCustomerIntegrationOptions>(
             context.Services.GetConfiguration().GetSection(PaymentCustomerIntegrationOptions.SectionName));
-        context.Services.AddHttpClient(nameof(CustomerBookingPaymentNotifier))
-            .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
-        context.Services.AddHttpClient(nameof(CustomerBookingSummaryClient))
-            .ConfigureHttpClient(c => c.Timeout = TimeSpan.FromSeconds(30));
         context.Services.AddMapperlyObjectMapper<PaymentServiceApplicationModule>();
     }
 }
