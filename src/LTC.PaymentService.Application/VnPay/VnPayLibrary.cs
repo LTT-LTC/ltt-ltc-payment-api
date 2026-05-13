@@ -102,7 +102,7 @@ public static class VnPayLibrary
             .OrderBy(kv => kv.Key, StringComparer.Ordinal);
     }
 
-    private static string HmacSha512Hex(string hashSecret, string signData)
+    public static string HmacSha512Hex(string hashSecret, string signData)
     {
         var keyBytes = Encoding.UTF8.GetBytes(hashSecret);
         var dataBytes = Encoding.UTF8.GetBytes(signData);
