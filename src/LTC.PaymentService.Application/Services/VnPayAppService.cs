@@ -146,6 +146,8 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         var locale = string.IsNullOrWhiteSpace(input.Locale) ? "vn" : input.Locale!;
         var orderInfo = TruncateOrderInfo(input.OrderInfo);
 
+        var expireDate = now.AddMinutes(Math.Max(1, _options.OrderExpireMinutes));
+
         var requestData = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["vnp_Version"] = "2.1.0",
@@ -159,7 +161,8 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             ["vnp_Locale"] = locale,
             ["vnp_ReturnUrl"] = returnFullUrl,
             ["vnp_IpAddr"] = string.IsNullOrWhiteSpace(clientIpAddress) ? "127.0.0.1" : clientIpAddress,
-            ["vnp_CreateDate"] = now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture)
+            ["vnp_CreateDate"] = now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture),
+            ["vnp_ExpireDate"] = expireDate.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture),
         };
 
         if (_options.IncludeIpnUrlInPaymentRequest)
