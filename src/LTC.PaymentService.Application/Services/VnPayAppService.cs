@@ -567,4 +567,121 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         origin = $"{uri.Scheme}://{uri.Authority}";
         return true;
     }
+
+    public async Task<ManualVnpayCompletionOutputDto> ManualCompleteByBookingAsync(Guid bookingId)
+    {
+        _logger.LogInformation("Manual VNPay completion requested for booking {BookingId}", bookingId);
+
+        // Find the pending payment request for this booking
+        var paymentRequest = await _paymentRequestRepository.FirstOrDefaultAsync(
+            x => x.BookingId == bookingId && x.PaymentMethod == "VNPAY");
+
+        if (paymentRequest == null)
+        {
+            _logger.LogWarning("Manual completion: No VNPAY payment request found for booking {BookingId}", bookingId);
+            return new ManualVnpayCompletionOutputDto
+            {
+                Success = false,
+                Message = "No VNPAY payment request found for this booking.",
+                BookingId = bookingId
+            };
+        }
+
+        // Find the associated payment
+        var payment = await _paymentRepository.FirstOrDefaultAsync(x => x.PaymentRequestId == paymentRequest.Id);
+        if (payment == null)
+        {
+            _logger.LogWarning("Manual completion: No payment found for payment request {PaymentRequestId}, booking {BookingId}",
+                paymentRequest.Id, bookingId);
+            return new ManualVnpayCompletionOutputDto
+            {
+                Success = false,
+                Message = "No payment record found.",
+                BookingId = bookingId,
+                PaymentRequestId = paymentRequest.Id
+            };
+        }
+
+        _logger.LogInformation(
+            "Manual completion: Found payment {PaymentId} with status {PaymentStatus} for booking {BookingId}",
+            payment.Id, payment.PaymentStatus, bookingId);
+
+        // If already processed, just return success
+        if (payment.PaymentStatus == "SUCCESS")
+        {
+            _logger.LogInformation("Manual completion: Payment already successful for booking {BookingId}", bookingId);
+            return new ManualVnpayCompletionOutputDto
+            {
+                Success = true,
+                Message = "Payment was already successful.",
+                BookingId = bookingId,
+                PaymentRequestId = paymentRequest.Id,
+                PaymentStatus = payment.PaymentStatus,
+                NotificationSent = false
+            };
+        }
+
+        if (payment.PaymentStatus != "PENDING")
+        {
+            _logger.LogWarning("Manual completion: Payment status is {PaymentStatus}, cannot complete for booking {BookingId}",
+                payment.PaymentStatus, bookingId);
+            return new ManualVnpayCompletionOutputDto
+            {
+                Success = false,
+                Message = $"Payment status is {payment.PaymentStatus}, cannot complete.",
+                BookingId = bookingId,
+                PaymentRequestId = paymentRequest.Id,
+                PaymentStatus = payment.PaymentStatus,
+                NotificationSent = false
+            };
+        }
+
+        // For pending payments, we cannot verify with VNPay directly without the transaction reference.
+        // Instead, we rely on the customer to have completed the payment on VNPay's side.
+        // This is a fallback mechanism for when IPN failed.
+        // Note: In a production system, you might want to query VNPay's API to verify the transaction.
+
+        _logger.LogWarning(
+            "Manual completion: Attempting to complete pending payment for booking {BookingId}. " +
+            "This assumes customer completed payment on VNPay. Consider implementing VNPay transaction query API.",
+            bookingId);
+
+        // Try to notify customer service to check and update booking status
+        // The customer service can verify with its own records
+        try
+        {
+            await _customerBookingPaymentNotifier.NotifyBookingPaidAsync(
+                bookingId,
+                paymentRequest.Amount,
+                paymentRequest.Currency ?? "VND",
+                payment.GatewayTransactionId,
+                paymentRequest.Id,
+                paymentRequest.TenantId);
+
+            _logger.LogInformation("Manual completion: Notification sent to customer service for booking {BookingId}", bookingId);
+
+            return new ManualVnpayCompletionOutputDto
+            {
+                Success = true,
+                Message = "Payment completion notification sent. Please refresh your booking status.",
+                BookingId = bookingId,
+                PaymentRequestId = paymentRequest.Id,
+                PaymentStatus = payment.PaymentStatus,
+                NotificationSent = true
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Manual completion: Failed to notify customer service for booking {BookingId}", bookingId);
+            return new ManualVnpayCompletionOutputDto
+            {
+                Success = false,
+                Message = "Failed to send completion notification. Please contact support.",
+                BookingId = bookingId,
+                PaymentRequestId = paymentRequest.Id,
+                PaymentStatus = payment.PaymentStatus,
+                NotificationSent = false
+            };
+        }
+    }
 }

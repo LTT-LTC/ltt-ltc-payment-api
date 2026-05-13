@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Threading.Tasks;
 using LTC.PaymentService.Dtos.Input;
+using LTC.PaymentService.Dtos.Output;
 using LTC.PaymentService.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -46,5 +47,17 @@ public class CustomerVnPayController : CustomerPaymentControllerBase
             return fwd.Split(',')[0].Trim();
 
         return httpContext.Connection.RemoteIpAddress?.ToString() ?? "127.0.0.1";
+    }
+
+    /// <summary>
+    /// Manually check and complete a VNPay payment by booking ID.
+    /// This is a fallback endpoint for when IPN/browser return fail to update booking status.
+    /// </summary>
+    [HttpPost("manual-complete/{bookingId:guid}")]
+    [ProducesResponseType(typeof(ManualVnpayCompletionOutputDto), 200)]
+    public async Task<IActionResult> ManualCompleteAsync(Guid bookingId)
+    {
+        var result = await _vnPayAppService.ManualCompleteByBookingAsync(bookingId);
+        return Ok(result);
     }
 }
