@@ -16,16 +16,15 @@ namespace LTC.PaymentService.Services.Integration;
 
 public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITransientDependency
 {
-    private readonly IHttpClientFactory _httpClientFactory;
+    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
+
     private readonly IOptions<PaymentCustomerIntegrationOptions> _options;
     private readonly ILogger<CustomerBookingSummaryClient> _logger;
 
     public CustomerBookingSummaryClient(
-        IHttpClientFactory httpClientFactory,
         IOptions<PaymentCustomerIntegrationOptions> options,
         ILogger<CustomerBookingSummaryClient> logger)
     {
-        _httpClientFactory = httpClientFactory;
         _options = options;
         _logger = logger;
     }
@@ -48,7 +47,6 @@ public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITran
             return new Dictionary<Guid, BookingPaymentSummaryRow>();
         }
 
-        var client = _httpClientFactory.CreateClient(nameof(CustomerBookingSummaryClient));
         var url = $"{opts.CustomerServiceBaseUrl.TrimEnd('/')}/ltc/customer-service/internal/booking/summaries-by-ids";
 
         _logger.LogInformation(
@@ -68,7 +66,7 @@ public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITran
 
             request.Content = JsonContent.Create(new { bookingIds = bookingIds.Distinct().ToList() });
 
-            using var response = await client.SendAsync(request, cancellationToken);
+            using var response = await _http.SendAsync(request, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);

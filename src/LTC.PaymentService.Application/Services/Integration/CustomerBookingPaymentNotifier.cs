@@ -22,16 +22,15 @@ public interface ICustomerBookingPaymentNotifier : ITransientDependency
 
 public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
 {
-    private readonly IHttpClientFactory _httpClientFactory;
+    private static readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(30) };
+
     private readonly PaymentCustomerIntegrationOptions _options;
     private readonly ILogger<CustomerBookingPaymentNotifier> _logger;
 
     public CustomerBookingPaymentNotifier(
-        IHttpClientFactory httpClientFactory,
         IOptions<PaymentCustomerIntegrationOptions> options,
         ILogger<CustomerBookingPaymentNotifier> logger)
     {
-        _httpClientFactory = httpClientFactory;
         _options = options.Value;
         _logger = logger;
     }
@@ -58,8 +57,6 @@ public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
 
         try
         {
-            var client = _httpClientFactory.CreateClient(nameof(CustomerBookingPaymentNotifier));
-
             using var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.TryAddWithoutValidation("X-Internal-Api-Key", _options.CustomerServiceInternalApiKey ?? string.Empty);
             if (tenantId.HasValue)
@@ -74,7 +71,7 @@ public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
                 paymentRequestId,
             });
 
-            using var response = await client.SendAsync(request);
+            using var response = await _http.SendAsync(request);
 
             if (!response.IsSuccessStatusCode)
             {
