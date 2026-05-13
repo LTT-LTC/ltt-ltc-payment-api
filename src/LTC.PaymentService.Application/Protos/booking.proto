@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option csharp_namespace = "LTC.CustomerService.Grpc";
+
+package customer;
+
+service BookingGrpc {
+  rpc NotifyPaymentCompleted (NotifyPaymentCompletedRequest) returns (NotifyPaymentCompletedResponse);
+}
+
+message NotifyPaymentCompletedRequest {
+  string booking_id = 1;
+  double paid_amount = 2;
+  string currency = 3;
+  string gateway_transaction_id = 4;
+  string payment_request_id = 5;
+  string tenant_id = 6;
+}
+
+message NotifyPaymentCompletedResponse {
+  bool success = 1;
+  string message = 2;
+}

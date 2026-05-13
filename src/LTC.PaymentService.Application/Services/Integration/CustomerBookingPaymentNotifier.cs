@@ -1,7 +1,7 @@
 using System;
-using System.Net.Http;
-using System.Net.Http.Json;
 using System.Threading.Tasks;
+using Grpc.Core;
+using LTC.CustomerService.Grpc;
 using LTC.PaymentService.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,16 +22,16 @@ public interface ICustomerBookingPaymentNotifier : ITransientDependency
 
 public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
 {
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly BookingGrpc.BookingGrpcClient _grpcClient;
     private readonly PaymentCustomerIntegrationOptions _options;
     private readonly ILogger<CustomerBookingPaymentNotifier> _logger;
 
     public CustomerBookingPaymentNotifier(
-        IHttpClientFactory httpClientFactory,
+        BookingGrpc.BookingGrpcClient grpcClient,
         IOptions<PaymentCustomerIntegrationOptions> options,
         ILogger<CustomerBookingPaymentNotifier> logger)
     {
-        _httpClientFactory = httpClientFactory;
+        _grpcClient = grpcClient;
         _options = options.Value;
         _logger = logger;
     }
@@ -44,105 +44,55 @@ public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
         Guid paymentRequestId,
         Guid? tenantId = null)
     {
-        if (string.IsNullOrWhiteSpace(_options.CustomerServiceBaseUrl) ||
-            string.IsNullOrWhiteSpace(_options.CustomerServiceInternalApiKey))
+        if (string.IsNullOrWhiteSpace(_options.CustomerServiceBaseUrl))
         {
-            _logger.LogWarning("Customer booking notify skipped (Integration:CustomerServiceBaseUrl or ApiKey not set).");
+            _logger.LogWarning("Customer booking notify skipped (Integration:CustomerServiceBaseUrl not set).");
             return;
         }
 
-        var baseUrl = _options.CustomerServiceBaseUrl.TrimEnd('/');
-        var url = $"{baseUrl}/ltc/customer-service/internal/booking/payment-completed";
-
-        _logger.LogInformation("Notifying customer service of payment completion for booking {BookingId}, amount {Amount}, tenantId={TenantId}",
+        _logger.LogInformation(
+            "Notifying customer service via gRPC for booking {BookingId}, amount {Amount}, tenantId={TenantId}",
             bookingId, paidAmount, tenantId);
 
-        // Retry configuration: 3 attempts with exponential backoff (1s, 2s, 4s)
-        const int maxRetries = 3;
-        var retryDelays = new[] { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4) };
-
-        for (int attempt = 0; attempt < maxRetries; attempt++)
+        var headers = new Metadata
         {
-            try
-            {
-                var client = _httpClientFactory.CreateClient(nameof(CustomerBookingPaymentNotifier));
-                using var request = new HttpRequestMessage(HttpMethod.Post, url);
-                request.Headers.TryAddWithoutValidation("X-Internal-Api-Key", _options.CustomerServiceInternalApiKey);
-                if (tenantId.HasValue)
-                {
-                    request.Headers.TryAddWithoutValidation("__tenant", tenantId.Value.ToString());
-                }
-                request.Content = JsonContent.Create(new
-                {
-                    bookingId,
-                    paidAmount,
-                    currency,
-                    gatewayTransactionId,
-                    paymentRequestId
-                });
+            { "x-internal-api-key", _options.CustomerServiceInternalApiKey ?? string.Empty },
+        };
 
-                _logger.LogDebug("Attempt {Attempt}/{MaxRetries}: Sending notification to {Url} for booking {BookingId}",
-                    attempt + 1, maxRetries, url, bookingId);
+        if (tenantId.HasValue)
+            headers.Add("__tenant", tenantId.Value.ToString());
 
-                var response = await client.SendAsync(request);
-                var body = await response.Content.ReadAsStringAsync();
+        try
+        {
+            var request = new NotifyPaymentCompletedRequest
+            {
+                BookingId = bookingId.ToString(),
+                PaidAmount = (double)paidAmount,
+                Currency = currency,
+                GatewayTransactionId = gatewayTransactionId ?? string.Empty,
+                PaymentRequestId = paymentRequestId.ToString(),
+                TenantId = tenantId?.ToString() ?? string.Empty,
+            };
 
-                if (response.IsSuccessStatusCode)
-                {
-                    _logger.LogInformation(
-                        "Customer booking notify succeeded for booking {BookingId} on attempt {Attempt}. Response: {Status} {Body}",
-                        bookingId, attempt + 1, (int)response.StatusCode, body);
-                    return; // Success - exit retry loop
-                }
-                else
-                {
-                    _logger.LogWarning(
-                        "Customer booking notify failed for booking {BookingId} on attempt {Attempt}: {Status} {Body}. Retrying...",
-                        bookingId, attempt + 1, (int)response.StatusCode, body);
+            var response = await _grpcClient.NotifyPaymentCompletedAsync(request, headers);
 
-                    // Don't retry on 4xx errors (client errors)
-                    if ((int)response.StatusCode >= 400 && (int)response.StatusCode < 500)
-                    {
-                        _logger.LogError(
-                            "Customer booking notify failed with client error for booking {BookingId}: {Status} {Body}. Not retrying.",
-                            bookingId, (int)response.StatusCode, body);
-                        return;
-                    }
-                }
-            }
-            catch (HttpRequestException ex)
-            {
-                _logger.LogWarning(
-                    "Customer booking notify HTTP error for booking {BookingId} on attempt {Attempt}: {Message}. Retrying...",
-                    bookingId, attempt + 1, ex.Message);
-            }
-            catch (TaskCanceledException ex)
-            {
-                _logger.LogWarning(
-                    "Customer booking notify timeout for booking {BookingId} on attempt {Attempt}: {Message}. Retrying...",
-                    bookingId, attempt + 1, ex.Message);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(
-                    ex,
-                    "Customer booking notify unexpected error for booking {BookingId} on attempt {Attempt}",
-                    bookingId, attempt + 1);
-            }
-
-            // Wait before next retry (except on last attempt)
-            if (attempt < maxRetries - 1)
-            {
-                _logger.LogInformation(
-                    "Waiting {DelayMs}ms before retry {NextAttempt}/{MaxRetries} for booking {BookingId}",
-                    retryDelays[attempt].TotalMilliseconds, attempt + 2, maxRetries, bookingId);
-                await Task.Delay(retryDelays[attempt]);
-            }
+            _logger.LogInformation(
+                "Customer booking gRPC notify succeeded for booking {BookingId}. Success={Success}, Message={Message}",
+                bookingId, response.Success, response.Message);
         }
-
-        _logger.LogError(
-            "Customer booking notify failed permanently after {MaxRetries} attempts for booking {BookingId}. " +
-            "Booking status and member card points may not be updated. Manual intervention required.",
-            maxRetries, bookingId);
+        catch (RpcException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Customer booking gRPC notify failed for booking {BookingId}. Status={Status}, Detail={Detail}",
+                bookingId, ex.StatusCode, ex.Status.Detail);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Customer booking gRPC notify unexpected error for booking {BookingId}",
+                bookingId);
+        }
     }
 }
