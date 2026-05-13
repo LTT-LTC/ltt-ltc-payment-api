@@ -186,11 +186,20 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
                 return Rsp("99", "Input data required");
             }
 
-            if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
+            if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out var receivedHash))
             {
-                _logger.LogWarning("VNPay IPN: Invalid signature");
+                // Log detailed signature debugging information
+                var signData = VnPayLibrary.BuildSignData(query);
+                var computedHash = VnPayLibrary.HmacSha512Hex(_options.HashSecret, signData);
+                _logger.LogError(
+                    "VNPay IPN: Invalid signature. ReceivedHash={ReceivedHash}, ComputedHash={ComputedHash}, SignData={SignData}, QueryParams={QueryParams}",
+                    receivedHash,
+                    computedHash,
+                    signData,
+                    string.Join(", ", query.Select(kv => $"{kv.Key}={kv.Value}")));
                 return Rsp("97", "Invalid Signature");
             }
+            _logger.LogInformation("VNPay IPN: Signature validated successfully");
 
             if (!query.TryGetValue("vnp_TxnRef", out var txnRef) || !Guid.TryParse(txnRef, out paymentRequestId))
             {
@@ -281,8 +290,20 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
         {
             var query = NormalizeQuery(queryParameters);
 
-            if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out _))
+            if (!VnPayLibrary.ValidateSignature(query, _options.HashSecret, out var returnHash))
+            {
+                // Log detailed signature debugging information for return URL
+                var signData = VnPayLibrary.BuildSignData(query);
+                var computedHash = VnPayLibrary.HmacSha512Hex(_options.HashSecret, signData);
+                _logger.LogError(
+                    "VNPay Return: Invalid signature. ReceivedHash={ReceivedHash}, ComputedHash={ComputedHash}, SignData={SignData}, QueryParams={QueryParams}",
+                    returnHash,
+                    computedHash,
+                    signData,
+                    string.Join(", ", query.Select(kv => $"{kv.Key}={kv.Value}")));
                 return _options.FrontendFailureUrl;
+            }
+            _logger.LogInformation("VNPay Return: Signature validated successfully");
 
             // Same callback params as IPN: persist SUCCESS/FAILED when IPN never reaches this host (localhost, firewall).
             await TryFinalizePaymentFromBrowserReturnAsync(query);
@@ -459,7 +480,9 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
 
     private static Dictionary<string, string> NormalizeQuery(IReadOnlyDictionary<string, string> queryParameters)
     {
-        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // Use Ordinal comparer (case-sensitive) to preserve exact parameter names from VNPay
+        // VNPay signature validation requires exact parameter name casing
+        var dict = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var kv in queryParameters)
         {
             if (string.IsNullOrEmpty(kv.Key))
