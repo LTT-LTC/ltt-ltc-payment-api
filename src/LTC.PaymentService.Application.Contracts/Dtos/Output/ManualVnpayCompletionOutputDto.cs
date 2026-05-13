@@ -1,3 +1,5 @@
+using System;
+
 namespace LTC.PaymentService.Dtos.Output;
 
 /// <summary>
