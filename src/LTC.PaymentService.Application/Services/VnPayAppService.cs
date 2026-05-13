@@ -607,19 +607,51 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
             "Manual completion: Found payment {PaymentId} with status {PaymentStatus} for booking {BookingId}",
             payment.Id, payment.PaymentStatus, bookingId);
 
-        // If already processed, just return success
+        // If payment is already SUCCESS but the customer-service was never notified
+        // (or its update failed), re-fire NotifyBookingPaidAsync. The customer handler
+        // is idempotent: it short-circuits if the booking is already PAID.
         if (payment.PaymentStatus == "SUCCESS")
         {
-            _logger.LogInformation("Manual completion: Payment already successful for booking {BookingId}", bookingId);
-            return new ManualVnpayCompletionOutputDto
+            _logger.LogInformation(
+                "Manual completion: Payment already SUCCESS for booking {BookingId}. Re-notifying customer-service to ensure booking/member-card/transaction-history updates are applied.",
+                bookingId);
+
+            try
             {
-                Success = true,
-                Message = "Payment was already successful.",
-                BookingId = bookingId,
-                PaymentRequestId = paymentRequest.Id,
-                PaymentStatus = payment.PaymentStatus,
-                NotificationSent = false
-            };
+                await _customerBookingPaymentNotifier.NotifyBookingPaidAsync(
+                    bookingId,
+                    paymentRequest.Amount,
+                    paymentRequest.Currency ?? "VND",
+                    payment.GatewayTransactionId,
+                    paymentRequest.Id,
+                    paymentRequest.TenantId);
+
+                return new ManualVnpayCompletionOutputDto
+                {
+                    Success = true,
+                    Message = "Payment was already successful. Re-sent booking confirmation to customer-service.",
+                    BookingId = bookingId,
+                    PaymentRequestId = paymentRequest.Id,
+                    PaymentStatus = payment.PaymentStatus,
+                    NotificationSent = true
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(
+                    ex,
+                    "Manual completion: Re-notify failed for booking {BookingId} despite Payment.SUCCESS",
+                    bookingId);
+                return new ManualVnpayCompletionOutputDto
+                {
+                    Success = false,
+                    Message = "Payment is successful but booking confirmation could not be delivered. Please try again or contact support.",
+                    BookingId = bookingId,
+                    PaymentRequestId = paymentRequest.Id,
+                    PaymentStatus = payment.PaymentStatus,
+                    NotificationSent = false
+                };
+            }
         }
 
         if (payment.PaymentStatus != "PENDING")
@@ -684,5 +716,25 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
                 NotificationSent = false
             };
         }
+    }
+
+    public async Task<PaymentStatusByBookingOutputDto?> GetPaymentStatusByBookingAsync(Guid bookingId)
+    {
+        var payment = await _paymentRepository.FirstOrDefaultAsync(x => x.BookingId == bookingId);
+
+        if (payment == null)
+        {
+            return null;
+        }
+
+        return new PaymentStatusByBookingOutputDto
+        {
+            PaymentStatus = payment.PaymentStatus ?? string.Empty,
+            Amount = payment.Amount,
+            Currency = "VND",
+            GatewayTransactionId = payment.GatewayTransactionId,
+            PaymentRequestId = payment.PaymentRequestId,
+            TenantId = payment.TenantId,
+        };
     }
 }

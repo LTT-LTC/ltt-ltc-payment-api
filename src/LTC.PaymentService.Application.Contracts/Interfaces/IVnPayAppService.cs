@@ -27,4 +27,10 @@ public interface IVnPayAppService : IApplicationService
     /// Verifies the payment status with VNPay and completes the booking workflow if payment was successful.
     /// </summary>
     Task<ManualVnpayCompletionOutputDto> ManualCompleteByBookingAsync(Guid bookingId);
+
+    /// <summary>
+    /// Service-to-service: returns the current VNPAY payment status for a booking.
+    /// Returns null if no payment record exists. Used by customer-service to cross-check before confirming booking.
+    /// </summary>
+    Task<PaymentStatusByBookingOutputDto?> GetPaymentStatusByBookingAsync(Guid bookingId);
 }
