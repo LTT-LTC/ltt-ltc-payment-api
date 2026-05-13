@@ -82,7 +82,7 @@ public static class VnPayLibrary
 
             sb.Append(kv.Key)
                 .Append('=')
-                .Append(WebUtility.UrlDecode(kv.Value))
+                .Append(kv.Value)
                 .Append('&');
         }
 

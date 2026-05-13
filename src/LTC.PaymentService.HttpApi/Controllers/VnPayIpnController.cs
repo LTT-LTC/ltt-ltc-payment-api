@@ -36,7 +36,10 @@ public class VnPayIpnController : AbpControllerBase
             .Split('&', StringSplitOptions.RemoveEmptyEntries)
             .Select(part => part.Split('=', 2))
             .Where(parts => parts.Length == 2)
-            .ToDictionary(parts => parts[0], parts => parts[1], StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(
+                parts => parts[0],
+                parts => Uri.UnescapeDataString(parts[1].Replace("+", " ")),
+                StringComparer.OrdinalIgnoreCase);
 
         var result = await _vnPayAppService.ProcessIpnAsync(dict);
         var json = JsonSerializer.Serialize(result, new JsonSerializerOptions
