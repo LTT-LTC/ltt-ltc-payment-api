@@ -40,11 +40,22 @@ public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITran
             string.IsNullOrWhiteSpace(opts.CustomerServiceInternalApiKey) ||
             bookingIds.Count == 0)
         {
+            _logger.LogWarning(
+                "Customer booking summaries skipped: BaseUrl={BaseUrl}, HasApiKey={HasApiKey}, BookingIdsCount={Count}",
+                opts.CustomerServiceBaseUrl,
+                !string.IsNullOrWhiteSpace(opts.CustomerServiceInternalApiKey),
+                bookingIds.Count);
             return new Dictionary<Guid, BookingPaymentSummaryRow>();
         }
 
         var client = _httpClientFactory.CreateClient(nameof(CustomerBookingSummaryClient));
         var url = $"{opts.CustomerServiceBaseUrl.TrimEnd('/')}/ltc/customer-service/internal/booking/summaries-by-ids";
+
+        _logger.LogInformation(
+            "Customer booking summaries request: Url={Url}, BookingIds={BookingIds}, TenantId={TenantId}",
+            url,
+            string.Join(",", bookingIds),
+            tenantId);
 
         try
         {
@@ -62,7 +73,7 @@ public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITran
             {
                 var body = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogWarning(
-                    "Customer booking summaries failed: {Status} {Body}",
+                    "Customer booking summaries failed: Status={Status}, Body={Body}",
                     (int)response.StatusCode,
                     body);
                 return new Dictionary<Guid, BookingPaymentSummaryRow>();
@@ -77,8 +88,17 @@ public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITran
             var list = envelope?.Data;
             if (list == null || list.Count == 0)
             {
+                _logger.LogWarning(
+                    "Customer booking summaries returned empty data: EnvelopeNull={EnvelopeNull}, ListCount={ListCount}",
+                    envelope == null,
+                    list?.Count ?? 0);
                 return new Dictionary<Guid, BookingPaymentSummaryRow>();
             }
+
+            _logger.LogInformation(
+                "Customer booking summaries succeeded: ReturnedCount={ReturnedCount}, RequestedCount={RequestedCount}",
+                list.Count,
+                bookingIds.Count);
 
             return list
                 .GroupBy(x => x.BookingId)
@@ -105,7 +125,7 @@ public class CustomerBookingSummaryClient : ICustomerBookingSummaryClient, ITran
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Customer booking summaries request threw");
+            _logger.LogError(ex, "Customer booking summaries request threw exception");
             return new Dictionary<Guid, BookingPaymentSummaryRow>();
         }
     }

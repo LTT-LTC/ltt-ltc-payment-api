@@ -202,7 +202,7 @@ public class PaymentServiceHttpApiHostModule : AbpModule
 
         if (!env.IsDevelopment())
         {
-            app.UseErrorPage();
+            app.UseHsts();
         }
 
         app.UseCorrelationId();
