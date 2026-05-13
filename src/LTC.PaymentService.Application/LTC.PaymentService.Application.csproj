@@ -9,11 +9,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Grpc.Net.Client" Version="2.76.0" />
-    <PackageReference Include="Grpc.Tools" Version="2.78.0">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
     <PackageReference Include="RabbitMQ.Client" Version="6.8.1" />
     <ProjectReference Include="..\..\shared\LTC.Shared.Hosting.Microservices\LTC.Shared.Hosting.Microservices.csproj" />
     <ProjectReference Include="..\LTC.PaymentService.Domain.Shared\LTC.PaymentService.Domain.Shared.csproj" />
@@ -34,8 +29,5 @@
     <PackageReference Include="Volo.Abp.SettingManagement.Application" Version="10.2.0" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Protobuf Include="Protos\booking.proto" GrpcServices="Client" />
-  </ItemGroup>
 
 </Project>
