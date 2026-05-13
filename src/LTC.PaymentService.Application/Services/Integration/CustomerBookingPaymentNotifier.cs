@@ -1,7 +1,7 @@
 using System;
+using System.Net.Http;
+using System.Net.Http.Json;
 using System.Threading.Tasks;
-using Grpc.Core;
-using LTC.CustomerService.Grpc;
 using LTC.PaymentService.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,16 +22,16 @@ public interface ICustomerBookingPaymentNotifier : ITransientDependency
 
 public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
 {
-    private readonly BookingGrpc.BookingGrpcClient _grpcClient;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly PaymentCustomerIntegrationOptions _options;
     private readonly ILogger<CustomerBookingPaymentNotifier> _logger;
 
     public CustomerBookingPaymentNotifier(
-        BookingGrpc.BookingGrpcClient grpcClient,
+        IHttpClientFactory httpClientFactory,
         IOptions<PaymentCustomerIntegrationOptions> options,
         ILogger<CustomerBookingPaymentNotifier> logger)
     {
-        _grpcClient = grpcClient;
+        _httpClientFactory = httpClientFactory;
         _options = options.Value;
         _logger = logger;
     }
@@ -50,48 +50,50 @@ public class CustomerBookingPaymentNotifier : ICustomerBookingPaymentNotifier
             return;
         }
 
+        var url = $"{_options.CustomerServiceBaseUrl.TrimEnd('/')}/ltc/customer-service/internal/booking/payment-completed";
+
         _logger.LogInformation(
-            "Notifying customer service via gRPC for booking {BookingId}, amount {Amount}, tenantId={TenantId}",
+            "Notifying customer service via HTTP for booking {BookingId}, amount {Amount}, tenantId={TenantId}",
             bookingId, paidAmount, tenantId);
-
-        var headers = new Metadata
-        {
-            { "x-internal-api-key", _options.CustomerServiceInternalApiKey ?? string.Empty },
-        };
-
-        if (tenantId.HasValue)
-            headers.Add("__tenant", tenantId.Value.ToString());
 
         try
         {
-            var request = new NotifyPaymentCompletedRequest
-            {
-                BookingId = bookingId.ToString(),
-                PaidAmount = (double)paidAmount,
-                Currency = currency,
-                GatewayTransactionId = gatewayTransactionId ?? string.Empty,
-                PaymentRequestId = paymentRequestId.ToString(),
-                TenantId = tenantId?.ToString() ?? string.Empty,
-            };
+            var client = _httpClientFactory.CreateClient(nameof(CustomerBookingPaymentNotifier));
 
-            var response = await _grpcClient.NotifyPaymentCompletedAsync(request, headers);
+            using var request = new HttpRequestMessage(HttpMethod.Post, url);
+            request.Headers.TryAddWithoutValidation("X-Internal-Api-Key", _options.CustomerServiceInternalApiKey ?? string.Empty);
+            if (tenantId.HasValue)
+                request.Headers.TryAddWithoutValidation("__tenant", tenantId.Value.ToString());
+
+            request.Content = JsonContent.Create(new
+            {
+                bookingId,
+                paidAmount,
+                currency,
+                gatewayTransactionId,
+                paymentRequestId,
+            });
+
+            using var response = await client.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                _logger.LogError(
+                    "Customer booking HTTP notify failed for booking {BookingId}. Status={Status}, Body={Body}",
+                    bookingId, (int)response.StatusCode, body);
+                return;
+            }
 
             _logger.LogInformation(
-                "Customer booking gRPC notify succeeded for booking {BookingId}. Success={Success}, Message={Message}",
-                bookingId, response.Success, response.Message);
-        }
-        catch (RpcException ex)
-        {
-            _logger.LogError(
-                ex,
-                "Customer booking gRPC notify failed for booking {BookingId}. Status={Status}, Detail={Detail}",
-                bookingId, ex.StatusCode, ex.Status.Detail);
+                "Customer booking HTTP notify succeeded for booking {BookingId}.",
+                bookingId);
         }
         catch (Exception ex)
         {
             _logger.LogError(
                 ex,
-                "Customer booking gRPC notify unexpected error for booking {BookingId}",
+                "Customer booking HTTP notify unexpected error for booking {BookingId}",
                 bookingId);
         }
     }
