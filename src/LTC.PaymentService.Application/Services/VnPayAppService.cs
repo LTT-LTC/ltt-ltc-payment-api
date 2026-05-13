@@ -575,7 +575,7 @@ public class VnPayAppService : ApplicationService, IVnPayAppService
 
         // Find the pending payment request for this booking
         var paymentRequest = await _paymentRequestRepository.FirstOrDefaultAsync(
-            x => x.BookingId == bookingId && x.PaymentMethod == "VNPAY");
+            x => x.BookingId == bookingId && x.PaymentGateway == "VNPAY");
 
         if (paymentRequest == null)
         {
