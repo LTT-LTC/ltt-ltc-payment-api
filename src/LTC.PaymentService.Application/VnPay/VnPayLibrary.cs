@@ -80,9 +80,9 @@ public static class VnPayLibrary
             if (HashExcludedKeys.Contains(kv.Key))
                 continue;
 
-            sb.Append(WebUtility.UrlEncode(kv.Key))
+            sb.Append(kv.Key)
                 .Append('=')
-                .Append(WebUtility.UrlEncode(kv.Value))
+                .Append(kv.Value)
                 .Append('&');
         }
 
